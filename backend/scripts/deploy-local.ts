@@ -4,7 +4,7 @@ import { network } from "hardhat";
 const CURRENCY = { USDC: 0, USDT: 1, EURC: 2 };
 
 async function main() {
-  const { ethers } = await network.connect();
+  const { ethers } = await network.getOrCreate();
 
   const [deployer, buyer, seller] = await ethers.getSigners();
 

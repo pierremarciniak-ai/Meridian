@@ -14,6 +14,7 @@ abstract contract InternalFunctions is Ownable {
     uint public internalID;
 
     enum WorkflowStatus {
+        UnSet,
         TransactionInitialized,
         TransactionCreated,
         TransactionSigned,
@@ -112,7 +113,7 @@ abstract contract InternalFunctions is Ownable {
     //mapping (address => mapping(bytes32 => bool)) public UserTransactions;
 
     mapping (Currency => IERC20) public tokenAddresses;
-    mapping (address => mapping (Currency => uint)) public pendingWithdrawals;
+    //mapping (address => mapping (Currency => uint)) public pendingWithdrawals;
 
     constructor() Ownable(msg.sender) {
         internalID = 0;

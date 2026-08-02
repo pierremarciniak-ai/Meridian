@@ -217,6 +217,9 @@ importers:
       '@nomicfoundation/hardhat-ignition':
         specifier: ^3.1.8
         version: 3.1.8(@nomicfoundation/hardhat-verify@3.0.21(hardhat@3.11.1))(hardhat@3.11.1)
+      '@nomicfoundation/hardhat-network-helpers':
+        specifier: ^3.0.11
+        version: 3.0.11(hardhat@3.11.1)
       '@nomicfoundation/hardhat-toolbox-mocha-ethers':
         specifier: ^3.0.7
         version: 3.0.7(b95b76c3ac8dde017681eb7660ddc2c5)
