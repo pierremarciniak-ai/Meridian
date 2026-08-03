@@ -1,8 +1,37 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+
+  --color-navy-950: #05121e;
+  --color-navy-900: #081a29;
+  --color-navy-850: #0b2033;
+  --color-navy-800: #0f293d;
+  --color-navy-700: #153349;
+  --color-navy-600: #1d4159;
+  --color-navy-500: #2a5271;
+
+  --color-teal-300: #7fe9db;
+  --color-teal-400: #2dd4bf;
+  --color-teal-500: #14b8a6;
+
+  --color-brass-300: #e8c896;
+  --color-brass-400: #d9a566;
+  --color-brass-500: #c08a49;
+
+  --color-coral-400: #f2867a;
+  --color-coral-500: #e2594b;
+
+  --color-foam-50: #f5f8f8;
+  --color-foam-100: #e7eef0;
+  --color-foam-200: #c7d5da;
+  --color-foam-300: #9fb3bb;
+  --color-foam-400: #7691a1;
+
+  --background: var(--color-navy-950);
+  --foreground: var(--color-foam-100);
+
+  --shadow-deep: 0 20px 45px -20px rgba(2, 10, 18, 0.7);
 }
 
 @theme inline {
@@ -12,15 +41,304 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--color-navy-600);
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(1200px 700px at 15% -10%, rgba(45, 212, 191, 0.08), transparent 60%),
+    radial-gradient(900px 600px at 100% 0%, rgba(217, 165, 102, 0.06), transparent 55%),
+    var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  position: relative;
+}
+
+/* Houle discrète en fond de page : quelques lignes de crête ondulées, très
+   estompées, pour rappeler un relevé bathymétrique sans distraire.
+   `absolute` (et non `fixed`) pour que le calque couvre toute la hauteur du
+   document plutôt que la seule fenêtre visible. Pas de `mask-image` ici : sur
+   un élément dont la hauteur bouge après le premier rendu (hydratation React,
+   contenu chargé de façon asynchrone), le masque n'est pas toujours repeint
+   correctement par le navigateur et laisse un rectangle "figé" visible à
+   l'ancienne frontière du fondu — d'où l'opacité fixe ci-dessous à la place. */
+.wave-field {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='120' viewBox='0 0 240 120'%3E%3Cpath d='M0 20 Q 30 0 60 20 T 120 20 T 180 20 T 240 20' fill='none' stroke='%231d4159' stroke-width='1'/%3E%3Cpath d='M0 60 Q 30 40 60 60 T 120 60 T 180 60 T 240 60' fill='none' stroke='%231d4159' stroke-width='1'/%3E%3Cpath d='M0 100 Q 30 80 60 100 T 120 100 T 180 100 T 240 100' fill='none' stroke='%231d4159' stroke-width='1'/%3E%3C/svg%3E");
+  background-size: 480px 240px;
+}
+
+.text-foam {
+  color: var(--color-foam-50);
+}
+.text-muted {
+  color: var(--color-foam-300);
+}
+.text-subtle {
+  color: var(--color-foam-400);
+}
+.text-accent {
+  color: var(--color-teal-300);
+}
+.text-brass {
+  color: var(--color-brass-300);
+}
+.text-danger {
+  color: var(--color-coral-400);
+}
+.bg-navy-panel {
+  background: var(--color-navy-900);
+}
+
+.font-mono-tight {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  letter-spacing: -0.01em;
+}
+
+.label-caps {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-foam-400);
+}
+
+.rope-divider {
+  border-top: 1px dashed var(--color-navy-500);
+}
+
+/* --- Cartes -------------------------------------------------------- */
+
+.manifest-card {
+  position: relative;
+  background: linear-gradient(180deg, var(--color-navy-850), var(--color-navy-900));
+  border: 1px solid var(--color-navy-600);
+  border-radius: 10px;
+  box-shadow: var(--shadow-deep);
+}
+
+.manifest-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  border-radius: 10px 10px 0 0;
+  background: linear-gradient(90deg, var(--color-teal-400), var(--color-brass-400));
+  opacity: 0.9;
+}
+
+/* --- Boutons --------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 6px;
+  padding: 0.55rem 1.1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  transition: filter 0.15s ease, transform 0.1s ease, background-color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.btn:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, var(--color-teal-400), var(--color-teal-500));
+  color: var(--color-navy-950);
+}
+
+.btn-primary:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--color-navy-500);
+  color: var(--color-foam-100);
+}
+
+.btn-secondary:not(:disabled):hover {
+  border-color: var(--color-teal-400);
+  color: var(--color-teal-300);
+}
+
+.btn-brass {
+  background: linear-gradient(180deg, var(--color-brass-400), var(--color-brass-500));
+  color: var(--color-navy-950);
+}
+
+.btn-brass:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.btn-danger {
+  background: transparent;
+  border: 1px solid var(--color-coral-500);
+  color: var(--color-coral-400);
+}
+
+.btn-danger:not(:disabled):hover {
+  background: rgba(226, 89, 75, 0.1);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-foam-200);
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--color-teal-300);
+}
+
+/* --- Champs de formulaire --------------------------------------------- */
+
+.field-input,
+.field-select {
+  width: 100%;
+  background: var(--color-navy-900);
+  border: 1px solid var(--color-navy-500);
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--color-foam-50);
+  transition: border-color 0.15s ease;
+}
+
+.field-input::placeholder {
+  color: var(--color-foam-400);
+}
+
+.field-input:focus,
+.field-select:focus {
+  outline: none;
+  border-color: var(--color-teal-400);
+}
+
+.field-input:disabled,
+.field-select:disabled {
+  opacity: 0.5;
+}
+
+/* --- Badges de statut --------------------------------------------------- */
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.status-badge__dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+}
+
+.status-initialized {
+  background: rgba(122, 158, 240, 0.12);
+  color: #a9c1f5;
+  border-color: rgba(122, 158, 240, 0.3);
+}
+.status-initialized .status-badge__dot {
+  background: #a9c1f5;
+}
+
+.status-created {
+  background: rgba(217, 165, 102, 0.12);
+  color: var(--color-brass-300);
+  border-color: rgba(217, 165, 102, 0.32);
+}
+.status-created .status-badge__dot {
+  background: var(--color-brass-400);
+}
+
+.status-signed {
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--color-teal-300);
+  border-color: rgba(45, 212, 191, 0.32);
+}
+.status-signed .status-badge__dot {
+  background: var(--color-teal-400);
+}
+
+.status-finished {
+  background: rgba(134, 239, 172, 0.12);
+  color: #a7f3c5;
+  border-color: rgba(134, 239, 172, 0.3);
+}
+.status-finished .status-badge__dot {
+  background: #86efac;
+}
+
+.status-aborted {
+  background: rgba(242, 134, 122, 0.12);
+  color: var(--color-coral-400);
+  border-color: rgba(242, 134, 122, 0.32);
+}
+.status-aborted .status-badge__dot {
+  background: var(--color-coral-400);
+}
+
+.status-unset {
+  background: rgba(159, 179, 187, 0.12);
+  color: var(--color-foam-300);
+  border-color: rgba(159, 179, 187, 0.28);
+}
+.status-unset .status-badge__dot {
+  background: var(--color-foam-300);
+}
+
+/* --- Divers -------------------------------------------------------- */
+
+.copy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--color-navy-900);
+  border: 1px solid var(--color-navy-600);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+  color: var(--color-foam-200);
+}
+
+.copy-chip button {
+  color: var(--color-foam-400);
+  transition: color 0.15s ease;
+}
+
+.copy-chip button:hover {
+  color: var(--color-teal-300);
+}
+
+::selection {
+  background: rgba(45, 212, 191, 0.3);
 }
