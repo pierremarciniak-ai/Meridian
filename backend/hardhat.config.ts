@@ -8,7 +8,11 @@ export default defineConfig({
       default: {
         version: "0.8.28",
         settings: {
-          //viaIR: true,
+          viaIR: true,
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
         },
       },
       production: {

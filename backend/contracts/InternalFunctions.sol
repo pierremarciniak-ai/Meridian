@@ -4,21 +4,65 @@ pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+
+interface ISanctionsList {
+    function isSanctioned(address addr) external view returns (bool);
+}
+
+// Forme ABI attendue de MeridianNFT.sol : pas d'import direct du contrat
+// (comme pour ISanctionsList ci-dessus), juste le shape nécessaire pour
+// l'appeler via l'adresse stockée dans meridianNFTAddress.
+//
+// Les enums sont passés en uint8 bruts (même ordre que Currency /
+// TransactionCondition / TransactionModel / AdvancePaymentMode ci-dessous)
+// plutôt qu'en string déjà formatées : la conversion en libellés lisibles
+// est faite côté MeridianNFT.sol, pas ici. Comme InternalFunctions est
+// hérité (donc inliné) par Meridian, tout code ajouté ici alourdit
+// directement le bytecode de Meridian — déjà proche de la limite EIP-170
+// (24 576 bytes) — alors que MeridianNFT est un contrat séparé avec son
+// propre budget.
+interface IMeridianNFT {
+    struct TransactionData {
+        bytes32 transactionID;
+        string billNumber;
+        address buyer;
+        address seller;
+        uint8 currency;
+        uint8 transactionCondition;
+        uint8 transactionModel;
+        uint8 advancePaymentMode;
+        uint128 advanceAmount;
+        uint128 totalAmount;
+        uint40 transactionCancellingDate;
+        uint40 sellerDepartureDate;
+        uint40 sellerArrivalDate;
+        string containerReference;
+    }
+
+    //function mintTransactionPair(TransactionData calldata data) external returns (uint256 buyerTokenId, uint256 sellerTokenId);
+    function mintOne(address _to, TransactionData calldata _data) external returns (uint256 tokenId);
+}
 
 // Contrat abstrait : porte tout ce qui est "interne" au fonctionnement
 // (types, storage, modifiers, events, et fonctions internal). Meridian.sol
 // en hérite et n'expose que l'API destinée au front-end. `abstract` car ce
 // contrat n'a pas vocation à être déployé seul (pas de fonctions externes).
 abstract contract InternalFunctions is Ownable {
+    using SafeCast for uint256;
 
-    uint public internalID;
+    // uint96 (et non uint256) pour que ce compteur se packe avec le
+    // _owner (address, 20 bytes) hérité d'Ownable dans le même slot de
+    // storage (20+12=32 bytes) au lieu d'occuper un slot dédié. uint96 max
+    // ≈ 7,9×10^28 : aucune limite réaliste pour un compteur de transactions.
+    uint96 public internalID;
 
     enum WorkflowStatus {
         UnSet,
         TransactionInitialized,
         TransactionCreated,
         TransactionSigned,
-        TransactionFinished,
+        TransactionCompleted,
         TransactionAborted
     }
 
@@ -53,31 +97,52 @@ abstract contract InternalFunctions is Ownable {
     struct User {
         UserType userType;
         address userAddress;
-        bool isSubjectedToSanctions;
     }
 
+    // Champs réordonnés (par rapport à l'ordre "logique") pour maximiser le
+    // packing de storage : Solidity ne packe que des champs value-type
+    // consécutifs dans la déclaration, et un struct/string/array force
+    // toujours un nouveau slot avant ET après lui. On regroupe donc tous les
+    // enums/bools en tête (1 slot), les deux User ensuite (1 slot chacun,
+    // déjà compacts en interne), puis les uint réduits (timestamps en
+    // uint40, montants en uint128) group par group de 32 bytes, et les deux
+    // string en tout dernier. Résultat : ~9 slots au lieu de 16.
     struct Transaction {
         WorkflowStatus workflowStatus;
-        string billNumber;
-        User buyer;
-        User seller;
         Currency currency;
         TransactionCondition transactionCondition;
         TransactionModel transactionModel;
         AdvancePaymentMode advancePaymentMode;
-        uint advanceAmount;
-        uint totalAmount;
-        uint transactionCancellingDate;
-        uint sellerDepartureDate;
-        uint sellerArrivalDate;
-        string containerReference;
         bool signedByBuyer;
         bool signedBySeller;
-        bytes32 billHash;
-        uint depositedAmount;
-        uint pendingWithdrawalAmount;
         bool depositCompleted;
         bool withdrawalCompleted;
+        bool totalAmountRefunded;
+        bool partialAmountRefunded;
+        bool buyerNFTMinted;
+        bool sellerNFTMinted;
+        bool nftsMinted;
+
+        User buyer;
+        User seller;
+
+        // Timestamps : uint40 suffit très largement (valide jusqu'à l'an
+        // 36812), et les 3 se packent dans un seul slot (15 bytes).
+        uint40 transactionCancellingDate;
+        uint40 sellerDepartureDate;
+        uint40 sellerArrivalDate;
+
+        // Montants : uint128 suffit très largement pour des montants de
+        // tokens (max ≈ 3,4×10^38, aucune stablecoin n'en approche). Les
+        // paires ci-dessous remplissent chacune un slot de 32 bytes pile.
+        uint128 advanceAmount;
+        uint128 totalAmount;
+        uint128 depositedAmount;
+        uint128 pendingWithdrawalAmount;
+        uint128 refundAmount;
+
+        string billNumber;
+        string containerReference;
         // uint creationDate;
         // uint signedDate;
         // uint departureDate;
@@ -86,6 +151,13 @@ abstract contract InternalFunctions is Ownable {
         // uint completionDate;
     }
 
+    // TransactionDetailsInput / SellerLogisticsInput / ShipPosition restent
+    // volontairement en uint (256) : ce sont des structs calldata-only,
+    // jamais écrites en storage. L'encodage ABI/calldata word-aligne chaque
+    // champ sur 32 bytes quelle que soit sa largeur déclarée, donc les
+    // réduire n'apporterait aucun gain de gas ici, juste des casts en plus
+    // au moment de les copier vers Transaction (uint128/uint40, voir
+    // saveCommonTransactionDetails et Meridian.initializeTransaction).
     struct TransactionDetailsInput {
         Currency currency;
         TransactionCondition transactionCondition;
@@ -115,6 +187,16 @@ abstract contract InternalFunctions is Ownable {
     mapping (Currency => IERC20) public tokenAddresses;
     //mapping (address => mapping (Currency => uint)) public pendingWithdrawals;
 
+    address public sanctionsOracleAddress;
+    address public mockSanctionsOracleAddress;
+    // Adresse zéro = minting désactivé (checkSignatures ne fait alors rien).
+    address public meridianNFTAddress;
+
+    bool public checkSanctionsEnabled = true;
+    bool public mockSanctionsEnabled = true;
+  
+    mapping(address => bool) public isExempt;
+
     constructor() Ownable(msg.sender) {
         internalID = 0;
     }
@@ -130,7 +212,7 @@ abstract contract InternalFunctions is Ownable {
     }
 
     modifier onlyInitializedTransaction(bytes32 _transactionID) {
-        require(TransactionsList[_transactionID].workflowStatus == WorkflowStatus.TransactionInitialized, "Transaction is not in the initialized state");
+        require(TransactionsList[_transactionID].workflowStatus == WorkflowStatus.TransactionInitialized, "Transaction is initialized");
         _;
     }
 
@@ -140,7 +222,18 @@ abstract contract InternalFunctions is Ownable {
     }
 
     modifier onlySignedTransaction(bytes32 _transactionID) {
-        require(TransactionsList[_transactionID].workflowStatus == WorkflowStatus.TransactionSigned, "Transaction is not in the signed state");
+        require(TransactionsList[_transactionID].workflowStatus == WorkflowStatus.TransactionSigned, "Transaction is not signed");
+        _;
+    }
+
+    // Comme transactionDateNotOverdue ci-dessous : abortIfOverdue est appelé
+    // en premier pour laisser l'éventuelle transition vers TransactionAborted
+    // se produire et persister. Le require qui suit ne peut alors revert que
+    // dans les cas où abortIfOverdue n'a rien muté (date non dépassée et
+    // statut pas déjà aborted), donc aucune écriture n'est jamais perdue.
+    modifier onlyAbortedTransaction(bytes32 _transactionID) {
+        checkAbortedStatus(_transactionID);
+        require(TransactionsList[_transactionID].workflowStatus == WorkflowStatus.TransactionAborted, "Transaction is not aborted");
         _;
     }
 
@@ -151,10 +244,18 @@ abstract contract InternalFunctions is Ownable {
     // `_;` (donc l'action demandée par l'appelant n'a pas lieu), mais la
     // transaction on-chain se termine normalement, avec l'écriture conservée.
     modifier transactionDateNotOverdue(bytes32 _transactionID) {
-        if (!abortIfOverdue(_transactionID)) {
+        if (!checkAbortedStatus(_transactionID)) {
             _;
         }
-    }       
+    }
+
+    modifier onlyUnsanctioned(address _userAddress) {
+        bool _sanctionned = checkSanction(_userAddress);
+        if (_sanctionned) {
+            revert AddressIsSanctioned(_userAddress);
+        }
+        _;
+    }
 
     event TransactionInitialized(bytes32 indexed transactionID, address indexed buyer);
     event TransactionCreated(bytes32 indexed transactionID, address indexed seller);
@@ -163,15 +264,28 @@ abstract contract InternalFunctions is Ownable {
     event TransactionPartiallySigned(bytes32 indexed transactionID, UserType userType, address indexed userAddress);
     event FundsDeposited(bytes32 indexed transactionID, address indexed buyer, uint amount, Currency currency);
     event FundsWithdrawn(bytes32 indexed transactionID, address indexed seller, uint amount, Currency currency);
-    event TransactionFinished(bytes32 indexed transactionID, address indexed buyer, address indexed seller);
+    event TransactionCompleted(bytes32 indexed transactionID, address indexed buyer, address indexed seller);
     event TransactionDateOverdue(bytes32 indexed transactionID, address indexed buyer, address indexed seller);
     event TransactionAborted(bytes32 indexed transactionID, address indexed buyer, address indexed seller);
+    event totalAmountRefunded(bytes32 indexed transactionID, address indexed buyer, uint amount, Currency currency);
+    event partialAmountRefunded(bytes32 indexed transactionID, address indexed buyer, uint amount, Currency currency);
+    event AddressSanctioned(address indexed userAddress);
+    event SanctionsOracleAddressUpdated(address indexed newOracle);
+    event MockSanctionsOracleAddressUpdated(address indexed newMockOracle);
+    event MockSanctionsToggled(bool status);
+    event SanctionsCheckToggled(bool status);
+    event ExemptAddressAdded(address indexed account);
+    event ExemptAddressRemoved(address indexed account);
+    event TokenAddressUpdated(Currency indexed currency, address indexed tokenAddress);
+    event MeridianNFTAddressUpdated(address indexed newMeridianNFT);
+    event TransactionNFTMinted(bytes32 indexed transactionID, UserType userType, address indexed userAddress, uint256 tokenId);
 
-    function initializeUser(UserType _userType, address _userAddress, bool _isSubjectedToSanctions) internal pure returns (User memory) {
+    error AddressIsSanctioned(address accountAddress);
+
+    function initializeUser(UserType _userType, address _userAddress) internal pure returns (User memory) {
         return User({
             userType: _userType,
-            userAddress: _userAddress,
-            isSubjectedToSanctions: _isSubjectedToSanctions
+            userAddress: _userAddress
         });
     }
 
@@ -213,17 +327,23 @@ abstract contract InternalFunctions is Ownable {
             _transaction.advancePaymentMode = calculateAdvancePaymentMode(_transaction.transactionModel, _details.advancePaymentMode);
         }
         if (_details.transactionCancellingDate != _transaction.transactionCancellingDate) {
-            _transaction.transactionCancellingDate = _details.transactionCancellingDate;
+            _transaction.transactionCancellingDate = _details.transactionCancellingDate.toUint40();
         }
         if (_details.advanceAmount != _transaction.advanceAmount) {
-            _transaction.advanceAmount = calculateAdvanceAmount(_details.transactionModel, _details.advanceAmount);
+            _transaction.advanceAmount = calculateAdvanceAmount(_details.transactionModel, _details.advanceAmount).toUint128();
         }
         if (_details.totalAmount != _transaction.totalAmount) {
-            _transaction.totalAmount = _details.totalAmount;
+            _transaction.totalAmount = _details.totalAmount.toUint128();
         }
     }
 
-    function calculateDepositAmount(Transaction storage _transaction) internal view returns (uint) {
+    function resetSignatures(bytes32 _transactionID) internal {
+        Transaction storage _transaction = TransactionsList[_transactionID];
+        _transaction.signedByBuyer = false;
+        _transaction.signedBySeller = false;
+    }
+
+    function calculateDepositAmount(Transaction storage _transaction) internal view returns (uint128) {
         if (_transaction.transactionModel == TransactionModel.FullLocked) {
             return _transaction.totalAmount;
         } else if (_transaction.transactionModel == TransactionModel.Free && _transaction.advanceAmount == 0) {
@@ -237,6 +357,26 @@ abstract contract InternalFunctions is Ownable {
         }
     }
 
+    function _signTransaction(bytes32 _transactionID, UserType _userType) internal {
+        Transaction storage _transaction = TransactionsList[_transactionID];
+
+        if (checkSanction(msg.sender)) {
+            _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
+
+            emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+            return;
+        }
+
+        if (_userType == UserType.Seller) {
+            _transaction.signedBySeller = true;
+        } else {
+            _transaction.signedByBuyer = true;
+        }
+
+        emit TransactionPartiallySigned(_transactionID, _userType, msg.sender);
+        checkSignatures(_transactionID);
+    }    
+
     function checkSignatures(bytes32 _transactionID) internal {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
@@ -245,6 +385,39 @@ abstract contract InternalFunctions is Ownable {
 
             emit TransactionSigned(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
         }
+    }
+
+    // Construit les données et mint un NFT "reçu de transaction" pour
+    // l'acheteur et un pour le vendeur. Appelé par
+    // Meridian.mintTransactionNFTs (fonction externe séparée, appelée par le
+    // front-end après la double signature) plutôt qu'automatiquement depuis
+    // checkSignatures : garder ce code hors du chemin critique de signature
+    // réduit le bytecode de Meridian, déjà proche de la limite EIP-170.
+    function mintTransactionNFT(bytes32 _transactionID, address _to) internal returns (uint256 _tokenId) {
+        Transaction storage _transaction = TransactionsList[_transactionID];
+
+        // Champs assignés un par un plutôt qu'un seul struct literal nommé :
+        // avec 14 champs, le literal fait "stack too deep" à la compilation
+        // (codegen legacy, sans viaIR).
+        IMeridianNFT.TransactionData memory _data;
+
+        _data.transactionID = _transactionID;
+        _data.billNumber = _transaction.billNumber;
+        _data.buyer = _transaction.buyer.userAddress;
+        _data.seller = _transaction.seller.userAddress;
+        _data.currency = uint8(_transaction.currency);
+        _data.transactionCondition = uint8(_transaction.transactionCondition);
+        _data.transactionModel = uint8(_transaction.transactionModel);
+        _data.advancePaymentMode = uint8(_transaction.advancePaymentMode);
+        _data.advanceAmount = _transaction.advanceAmount;
+        _data.totalAmount = _transaction.totalAmount;
+        _data.transactionCancellingDate = _transaction.transactionCancellingDate;
+        _data.sellerDepartureDate = _transaction.sellerDepartureDate;
+        _data.sellerArrivalDate = _transaction.sellerArrivalDate;
+        _data.containerReference = _transaction.containerReference;
+
+        //IMeridianNFT(meridianNFTAddress).mintTransactionPair(_data);_mintOne
+        _tokenId = IMeridianNFT(meridianNFTAddress).mintOne(_to, _data);
     }
 
     // Fonction partagée : applique l'abandon si la date est dépassée, et
@@ -256,22 +429,34 @@ abstract contract InternalFunctions is Ownable {
     // stocké comme le 16/09 à 00:00:00 UTC). La comparaison >= évite le
     // nombre magique "23:59:59" côté front et reste lisible : la transaction
     // expire dès que block.timestamp atteint ou dépasse cette date pivot.
-    function abortIfOverdue(bytes32 _transactionID) internal returns (bool) {
+    function checkAbortedStatus(bytes32 _transactionID) internal returns (bool) {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
         if (block.timestamp >= _transaction.transactionCancellingDate) {
             if (_transaction.workflowStatus != WorkflowStatus.TransactionAborted) {
                 _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
+                
                 emit TransactionDateOverdue(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+                emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
             }
             return true;
+        } else if (_transaction.workflowStatus == WorkflowStatus.TransactionAborted) {
+            return true;
+        } else {
+            return false;
         }
-        return false;
     }    
 
-    // function checkSanction(address _userAddress) internal view returns (bool) {
-    //     // Implement the logic to check if the user is sanctioned
-    //     // For example, you can maintain a list of sanctioned addresses and check against it
-    //     return false; // Placeholder return value
-    // }
+    function checkSanction(address _userAddress) internal returns (bool) {
+        if (checkSanctionsEnabled && !isExempt[_userAddress]) {
+            address _oracleAddress = mockSanctionsEnabled ? mockSanctionsOracleAddress : sanctionsOracleAddress;
+            bool _sanctioned = ISanctionsList(_oracleAddress).isSanctioned(_userAddress);
+
+            if (_sanctioned) {
+                emit AddressSanctioned(_userAddress);
+                return true;
+            }
+        }
+        return false;
+    }
 }

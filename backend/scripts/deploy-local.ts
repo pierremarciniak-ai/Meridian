@@ -45,11 +45,30 @@ async function main() {
 
   console.log(`\n${ethers.formatUnits(amount, 6)} USDC/USDT/EURC mintés vers ${buyer.address}`);
 
-  console.log("\n--- Adresses à copier dans ton .env.local Next.js ---");
+  // --- 5. Déploiement de l'oracle OFAC ---
+  const sanctionsList = await ethers.deployContract("SanctionsList");
+  await sanctionsList.waitForDeployment();
+
+  console.log("SanctionsList:", await sanctionsList.getAddress());
+
+  await meridian.setSanctionsOracleAddress(await sanctionsList.getAddress());
+  await meridian.setMockSanctionsOracleAddress(await sanctionsList.getAddress());
+
+  // --- 6. Déploiement de MeridianNFT ---
+  const meridianNFT = await ethers.deployContract("MeridianNFT", [await meridian.getAddress()]);
+  await meridianNFT.waitForDeployment();
+  console.log("MeridianNFT:", await meridianNFT.getAddress());
+
+  await meridian.setMeridianNFTAddress(await meridianNFT.getAddress());
+
+  console.log("\n--- Adresses à copier dans .env.local Next.js ---");
   console.log("NEXT_PUBLIC_MERIDIAN_ADDRESS=", await meridian.getAddress());
   console.log("NEXT_PUBLIC_USDC_ADDRESS=", await usdc.getAddress());
   console.log("NEXT_PUBLIC_USDT_ADDRESS=", await usdt.getAddress());
   console.log("NEXT_PUBLIC_EURC_ADDRESS=", await eurc.getAddress());
+  console.log("NEXT_PUBLIC_SANCTIONS_ORACLE_ADDRESS=", await sanctionsList.getAddress());
+  console.log("NEXT_PUBLIC_MOCK_SANCTIONS_ORACLE_ADDRESS=", await sanctionsList.getAddress());
+  console.log("NEXT_PUBLIC_MERIDIAN_NFT_ADDRESS=", await meridianNFT.getAddress());
 }
 
 main().catch((error) => {
