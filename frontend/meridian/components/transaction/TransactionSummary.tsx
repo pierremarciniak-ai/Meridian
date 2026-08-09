@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import {
   WorkflowStatus,
   advancePaymentModeLabels,
+  containerPositionStatusLabels,
   currencyLabels,
   transactionConditionLabels,
   transactionModelLabels,
@@ -95,6 +96,7 @@ export function TransactionSummary({
           <Row label="Départ">{formatUnixDate(tx.sellerDepartureDate)}</Row>
           <Row label="Arrivée">{formatUnixDate(tx.sellerArrivalDate)}</Row>
           <Row label="Conteneur">{tx.containerReference ? <span className="font-mono-tight">{tx.containerReference}</span> : "—"}</Row>
+          <Row label="Position du conteneur">{containerPositionStatusLabels[tx.containerPositionStatus]}</Row>
         </div>
       </div>
 
@@ -146,7 +148,7 @@ export function TransactionSummary({
                   disabled={alreadySigned}
                   loading={stage === "signing" || stage === "confirming"}
                 >
-                  {alreadySigned ? "Déjà signé" : `Signer en tant que ${role === "buyer" ? "acheteur" : "fournisseur"}`}
+                  {alreadySigned ? "Signé" : `Signer en tant que ${role === "buyer" ? "acheteur" : "fournisseur"}`}
                 </Button>
               </>
             ) : (

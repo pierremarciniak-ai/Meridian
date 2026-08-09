@@ -40,6 +40,13 @@ if (typeof window !== "undefined") {
       onramp: false,
       history: false,
     },
+    // Le connecteur "Coinbase Smart Wallet / Base Account" embarque son
+    // propre SDK de télémétrie Coinbase, qui tente un fetch vers un endpoint
+    // d'analytics (souvent bloqué par les bloqueurs de trackers, ex. Brave
+    // Shields) et pollue la console avec une erreur inoffensive mais
+    // trompeuse. Inutile pour du dev local sur Hardhat de toute façon.
+    enableCoinbase: false,
+    enableBaseAccount: false,
   });
 }
 

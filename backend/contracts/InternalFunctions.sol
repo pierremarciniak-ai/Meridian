@@ -94,6 +94,12 @@ abstract contract InternalFunctions is Ownable {
         Seller
     }
 
+    enum ContainerPositionStatus {
+        UnSet,
+        InTransit,
+        AtDestination
+    }
+
     struct User {
         UserType userType;
         address userAddress;
@@ -113,15 +119,23 @@ abstract contract InternalFunctions is Ownable {
         TransactionCondition transactionCondition;
         TransactionModel transactionModel;
         AdvancePaymentMode advancePaymentMode;
+        ContainerPositionStatus containerPositionStatus;
         bool signedByBuyer;
         bool signedBySeller;
         bool depositCompleted;
+        bool partialWithdrawalCompleted;
         bool withdrawalCompleted;
         bool totalAmountRefunded;
         bool partialAmountRefunded;
         bool buyerNFTMinted;
         bool sellerNFTMinted;
-        bool nftsMinted;
+        // Distinguent la cause d'un TransactionAborted : sanction détectée
+        // (ici) d'une échéance simplement dépassée (checkAbortedStatus, qui
+        // ne touche à aucun des deux). Sans ça, le front ne peut pas savoir
+        // pourquoi un dossier a été abandonné et affiche à tort le message
+        // "échéance dépassée" même quand la vraie cause est une sanction.
+        bool buyerSanctioned;
+        bool sellerSanctioned;
 
         User buyer;
         User seller;
@@ -191,6 +205,13 @@ abstract contract InternalFunctions is Ownable {
     address public mockSanctionsOracleAddress;
     // Adresse zéro = minting désactivé (checkSignatures ne fait alors rien).
     address public meridianNFTAddress;
+    // Adresse dédiée (contrôlée par le cron backend qui interroge l'API
+    // VesselFinder), distincte du owner : VesselFinder n'expose aucun oracle
+    // on-chain, donc c'est notre propre service qui pousse la donnée via
+    // reportContainerPosition. Ne jamais alimenter containerPositionStatus
+    // depuis un paramètre fourni par le vendeur (withdrawFunds) : il a
+    // intérêt à mentir pour débloquer les fonds plus tôt.
+    address public containerPositionOracleAddress;
 
     bool public checkSanctionsEnabled = true;
     bool public mockSanctionsEnabled = true;
@@ -226,6 +247,13 @@ abstract contract InternalFunctions is Ownable {
         _;
     }
 
+    modifier sellerInfosCompleted(bytes32 _transactionID) {
+        require(TransactionsList[_transactionID].sellerDepartureDate != 0, "Departure date not set");
+        require(TransactionsList[_transactionID].sellerArrivalDate != 0, "Arrival date not set");
+        require(bytes(TransactionsList[_transactionID].containerReference).length > 0, "Container reference cannot be empty");
+        _;
+    }
+
     // Comme transactionDateNotOverdue ci-dessous : abortIfOverdue est appelé
     // en premier pour laisser l'éventuelle transition vers TransactionAborted
     // se produire et persister. Le require qui suit ne peut alors revert que
@@ -257,6 +285,11 @@ abstract contract InternalFunctions is Ownable {
         _;
     }
 
+    modifier onlyContainerPositionOracle() {
+        require(msg.sender == containerPositionOracleAddress, "You're not the container position oracle");
+        _;
+    }
+
     event TransactionInitialized(bytes32 indexed transactionID, address indexed buyer);
     event TransactionCreated(bytes32 indexed transactionID, address indexed seller);
     event TransactionDetailsSaved(bytes32 indexed transactionID, UserType userType, address indexed userAddress);
@@ -279,6 +312,8 @@ abstract contract InternalFunctions is Ownable {
     event TokenAddressUpdated(Currency indexed currency, address indexed tokenAddress);
     event MeridianNFTAddressUpdated(address indexed newMeridianNFT);
     event TransactionNFTMinted(bytes32 indexed transactionID, UserType userType, address indexed userAddress, uint256 tokenId);
+    event ContainerPositionOracleAddressUpdated(address indexed newOracle);
+    event ContainerPositionReported(bytes32 indexed transactionID, ContainerPositionStatus status);
 
     error AddressIsSanctioned(address accountAddress);
 
@@ -307,6 +342,9 @@ abstract contract InternalFunctions is Ownable {
         } else if (_transactionModel == TransactionModel.PartialImmediate) {
             return AdvancePaymentMode.Immediate;
         }
+        // Seul cas restant : TransactionModel.Free. Un retour inconditionnel
+        // ici (plutôt qu'un 3e "else if") permet au compilateur de prouver
+        // que la fonction retourne toujours une valeur sur tous les chemins.
         return _requestedMode;
     }
 
@@ -362,19 +400,23 @@ abstract contract InternalFunctions is Ownable {
 
         if (checkSanction(msg.sender)) {
             _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
+            if (_userType == UserType.Seller) {
+                _transaction.sellerSanctioned = true;
+            } else {
+                _transaction.buyerSanctioned = true;
+            }
 
             emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
-            return;
-        }
-
-        if (_userType == UserType.Seller) {
-            _transaction.signedBySeller = true;
         } else {
-            _transaction.signedByBuyer = true;
-        }
+            if (_userType == UserType.Seller) {
+                _transaction.signedBySeller = true;
+            } else {
+                _transaction.signedByBuyer = true;
+            }
 
-        emit TransactionPartiallySigned(_transactionID, _userType, msg.sender);
-        checkSignatures(_transactionID);
+            emit TransactionPartiallySigned(_transactionID, _userType, msg.sender);
+            checkSignatures(_transactionID);
+        }
     }    
 
     function checkSignatures(bytes32 _transactionID) internal {

@@ -35,6 +35,24 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit MeridianNFTAddressUpdated(_meridianNFT);
     }
 
+    function setContainerPositionOracleAddress(address _containerPositionOracle) external onlyOwner {
+        require(_containerPositionOracle != address(0), "Invalid container position oracle address");
+        containerPositionOracleAddress = _containerPositionOracle;
+
+        emit ContainerPositionOracleAddressUpdated(_containerPositionOracle);
+    }
+
+    // Appelée par notre propre backend (le cron qui interroge l'API
+    // VesselFinder), pas par le vendeur : voir le commentaire sur
+    // containerPositionOracleAddress dans InternalFunctions.sol. C'est la
+    // seule façon d'écrire containerPositionStatus.
+    function reportContainerPosition(bytes32 _transactionID, ContainerPositionStatus _status) external
+    onlyContainerPositionOracle onlySignedTransaction(_transactionID) {
+        TransactionsList[_transactionID].containerPositionStatus = _status;
+
+        emit ContainerPositionReported(_transactionID, _status);
+    }
+
     function setMockSanctionsOracleAddress(address _mockSanctionsOracle) external onlyOwner {
         require(_mockSanctionsOracle != address(0), "Invalid mock sanctions oracle address");
         mockSanctionsOracleAddress = _mockSanctionsOracle;
@@ -111,6 +129,8 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         
         Transaction storage _transaction = TransactionsList[_transactionID];
 
+        require(_transaction.buyer.userAddress != msg.sender, "Buyer cannot be the seller");
+
         bytes32 _billNumberHashSeller = keccak256(abi.encodePacked(_billNumber));
         bytes32 _billNumberHashTransaction = keccak256(abi.encodePacked(_transaction.billNumber));
 
@@ -125,55 +145,60 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
 
     function saveTransactionDetailsSeller(bytes32 _transactionID, SellerLogisticsInput calldata _logistics,
     TransactionDetailsInput calldata _details) external onlySeller(_transactionID) onlyCreatedTransaction(_transactionID) {
-        require(_logistics.arrivalDate > _logistics.departureDate, "Arrival date must be after departure date");
-        require(bytes(_logistics.containerReference).length > 0, "Container reference cannot be empty");
 
         Transaction storage _transaction = TransactionsList[_transactionID];
 
-        _transaction.sellerDepartureDate = _logistics.departureDate.toUint40();
-        _transaction.sellerArrivalDate = _logistics.arrivalDate.toUint40();
-        _transaction.containerReference = _logistics.containerReference;
+        _transaction.sellerSanctioned = checkSanction(msg.sender);
 
-        saveCommonTransactionDetails(_transactionID, _details);
+        if (_transaction.sellerSanctioned) {
+            _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
 
-        resetSignatures(_transactionID);
+            emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+        } else {
+            require(_logistics.arrivalDate > _logistics.departureDate, "Arrival date must be after departure date");
+            require(bytes(_logistics.containerReference).length > 0, "Container reference cannot be empty");
 
-        emit TransactionDetailsSaved(_transactionID, UserType.Seller, msg.sender);
+            _transaction.sellerDepartureDate = _logistics.departureDate.toUint40();
+            _transaction.sellerArrivalDate = _logistics.arrivalDate.toUint40();
+            _transaction.containerReference = _logistics.containerReference;
+
+            saveCommonTransactionDetails(_transactionID, _details);
+
+            resetSignatures(_transactionID);
+
+            emit TransactionDetailsSaved(_transactionID, UserType.Seller, msg.sender);
+        }
     }
 
     function saveTransactionDetailsBuyer(bytes32 _transactionID, TransactionDetailsInput calldata _details) external
-    onlyBuyer(_transactionID) onlyCreatedTransaction(_transactionID) {
+    onlyBuyer(_transactionID) sellerInfosCompleted(_transactionID) onlyCreatedTransaction(_transactionID) {
 
-        saveCommonTransactionDetails(_transactionID, _details);
+        Transaction storage _transaction = TransactionsList[_transactionID];
 
-        resetSignatures(_transactionID);
+        _transaction.buyerSanctioned = checkSanction(msg.sender);
 
-        emit TransactionDetailsSaved(_transactionID, UserType.Buyer, msg.sender);
+        if (_transaction.buyerSanctioned) {
+            _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
+
+            emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+        } else {
+            saveCommonTransactionDetails(_transactionID, _details);
+
+            resetSignatures(_transactionID);
+
+            emit TransactionDetailsSaved(_transactionID, UserType.Buyer, msg.sender);
+        }
     }
 
-    function signTransactionSeller(bytes32 _transactionID) external onlySeller(_transactionID) onlyCreatedTransaction(_transactionID) {
+    function signTransactionSeller(bytes32 _transactionID) external onlySeller(_transactionID) sellerInfosCompleted(_transactionID)
+    onlyCreatedTransaction(_transactionID) {
         _signTransaction(_transactionID, UserType.Seller);
     }
 
-    function signTransactionBuyer(bytes32 _transactionID) external onlyBuyer(_transactionID) onlyCreatedTransaction(_transactionID) {
+    function signTransactionBuyer(bytes32 _transactionID) external onlyBuyer(_transactionID) sellerInfosCompleted(_transactionID)
+    onlyCreatedTransaction(_transactionID) {
         _signTransaction(_transactionID, UserType.Buyer);
     }
-
-    // Appelée par le front-end une fois la transaction passée en
-    // TransactionSigned (les deux parties ont signé), pas automatiquement
-    // depuis signTransaction* : voir le commentaire sur _mintTransactionNFTs
-    // dans InternalFunctions.sol. Permissionless (pas de onlyBuyer/onlySeller) :
-    // les NFTs vont de toute façon aux adresses buyer/seller déjà fixées sur
-    // la transaction, donc rien à protéger côté appelant.
-    // function mintTransactionNFTs(bytes32 _transactionID) external onlySignedTransaction(_transactionID) {
-    //     require(meridianNFTAddress != address(0), "Meridian NFT contract not configured");
-
-    //     Transaction storage _transaction = TransactionsList[_transactionID];
-    //     require(!_transaction.nftsMinted, "NFTs already minted for this transaction");
-    //     _transaction.nftsMinted = true;
-
-    //     _mintTransactionNFTs(_transactionID);
-    // }
 
     function mintTransactionNFTBuyer(bytes32 _transactionID) external onlyBuyer(_transactionID) onlySignedTransaction(_transactionID) {
         require(meridianNFTAddress != address(0), "Meridian NFT contract not configured");
@@ -203,48 +228,77 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
     transactionDateNotOverdue(_transactionID) {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
-        require(!_transaction.depositCompleted, "Payment already completed");
+        _transaction.sellerSanctioned = checkSanction(_transaction.seller.userAddress);
+        _transaction.buyerSanctioned = checkSanction(msg.sender);
 
-        uint128 _amountToDeposit = calculateDepositAmount(_transaction);
-        require(_amountToDeposit > 0, "No deposit required for this transaction model");
+        if (_transaction.sellerSanctioned || _transaction.buyerSanctioned) {
+            _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
 
-        IERC20 _token = tokenAddresses[_transaction.currency];
-        require(address(_token) != address(0), "Token address not configured for this currency");
+            emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+        } else {
+            require(!_transaction.depositCompleted, "Payment already completed");
 
-        _transaction.depositedAmount += _amountToDeposit;
-        _transaction.pendingWithdrawalAmount += _amountToDeposit;
-        if (_transaction.depositedAmount >= _transaction.totalAmount) {
-            _transaction.depositCompleted = true;
+            uint128 _amountToDeposit = calculateDepositAmount(_transaction);
+            require(_amountToDeposit > 0, "No deposit required for this transaction model");
+
+            IERC20 _token = tokenAddresses[_transaction.currency];
+            require(address(_token) != address(0), "Token address not configured for this currency");
+
+            _transaction.depositedAmount += _amountToDeposit;
+            _transaction.pendingWithdrawalAmount += _amountToDeposit;
+            if (_transaction.depositedAmount >= _transaction.totalAmount) {
+                _transaction.depositCompleted = true;
+            }
+
+            _token.safeTransferFrom(_transaction.buyer.userAddress, address(this), _amountToDeposit);
+
+            emit FundsDeposited(_transactionID, _transaction.buyer.userAddress, _amountToDeposit, _transaction.currency);
         }
-
-        _token.safeTransferFrom(_transaction.buyer.userAddress, address(this), _amountToDeposit);
-
-        emit FundsDeposited(_transactionID, _transaction.buyer.userAddress, _amountToDeposit, _transaction.currency);
     }
 
-    function withdrawFunds(bytes32 _transactionID) external nonReentrant onlySeller(_transactionID) onlySignedTransaction(_transactionID) {
+    function withdrawFunds(bytes32 _transactionID) external nonReentrant onlySeller(_transactionID)
+    onlySignedTransaction(_transactionID) {
         Transaction storage _transaction = TransactionsList[_transactionID];
         Currency _currency = _transaction.currency;
 
-        require(_transaction.withdrawalCompleted == false, "Withdrawal already completed");
+        _transaction.sellerSanctioned = checkSanction(msg.sender);
+        _transaction.buyerSanctioned = checkSanction(_transaction.buyer.userAddress);
 
-        uint128 _amount = _transaction.pendingWithdrawalAmount;
-        require(_amount > 0, "Nothing to withdraw");
+        if (_transaction.sellerSanctioned || _transaction.buyerSanctioned) {
+            _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
 
-        IERC20 _token = tokenAddresses[_currency];
-        require(address(_token) != address(0), "Token address not configured for this currency");
+            emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+        } else {
+            require(_transaction.withdrawalCompleted == false, "Withdrawal already completed");
 
-        _transaction.pendingWithdrawalAmount = 0;
+            uint128 _amount = _transaction.pendingWithdrawalAmount;
+            require(_amount > 0, "Nothing to withdraw");
 
-        _token.safeTransfer(_transaction.seller.userAddress, _amount);
+            if (_transaction.advancePaymentMode == AdvancePaymentMode.Deferred || _transaction.partialWithdrawalCompleted) {
+                if (_transaction.transactionCondition == TransactionCondition.AtTheBeginningOfDelivery) {
+                    require(_transaction.containerPositionStatus == ContainerPositionStatus.InTransit ||
+                    _transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be in transit or at destination for withdrawal");
+                } else if (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery) {
+                    require(_transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be at destination for withdrawal");
+                }
+            }
 
-        emit FundsWithdrawn(_transactionID, _transaction.seller.userAddress, _amount, _transaction.currency);
+            IERC20 _token = tokenAddresses[_currency];
+            require(address(_token) != address(0), "Token address not configured for this currency");
 
-        if (_transaction.pendingWithdrawalAmount == 0 && _transaction.depositCompleted) {
-            _transaction.workflowStatus = WorkflowStatus.TransactionCompleted;
-            _transaction.withdrawalCompleted = true;
+            _transaction.pendingWithdrawalAmount = 0;
+            _transaction.partialWithdrawalCompleted = true;
 
-            emit TransactionCompleted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+            _token.safeTransfer(_transaction.seller.userAddress, _amount);
+
+            emit FundsWithdrawn(_transactionID, _transaction.seller.userAddress, _amount, _transaction.currency);
+
+            if (_transaction.pendingWithdrawalAmount == 0 && _transaction.depositCompleted) {
+                _transaction.workflowStatus = WorkflowStatus.TransactionCompleted;
+                _transaction.withdrawalCompleted = true;
+
+                emit TransactionCompleted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+            }
         }
     }
 
@@ -276,11 +330,4 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
     function getTransaction(bytes32 _transactionID) external view returns (Transaction memory) {
         return TransactionsList[_transactionID];
     }
-
-    // function checkShipPosition(bytes32 _transactionID) external view returns (string memory) {
-    //     Transaction storage _transaction = TransactionsList[_transactionID];
-    //     // Implement the logic to check the ship's position based on the transaction details
-    //     // For example, you can use an oracle or external API to get the ship's current position
-    //     return "Ship position not implemented"; // Placeholder return value
-    // }
 }

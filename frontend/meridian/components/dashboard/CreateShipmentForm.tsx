@@ -20,12 +20,14 @@ import {
   transactionModelHints,
   transactionModelLabels,
 } from "@/lib/domain/enums";
-import { dateInputToUnix, formatAmount, parseAmountInput } from "@/lib/domain/format";
+import { dateInputToUnix, dateTimeInputToUnix, formatAmount, parseAmountInput, unixToDateTimeInput } from "@/lib/domain/format";
 import { estimateAdvanceAmount } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
+import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
+import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress, tokenAddresses } from "@/lib/web3/contracts";
+import { meridianAddress } from "@/lib/web3/contracts";
 import { findEventArg } from "@/lib/web3/parseLogs";
 
 function tomorrowPlus(days: number) {
@@ -34,7 +36,14 @@ function tomorrowPlus(days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-export function CreateShipmentForm() {
+function nowPlusMinutes(minutes: number) {
+  return unixToDateTimeInput(Math.floor(Date.now() / 1000) + minutes * 60);
+}
+
+// onCreatedChange permet à la page d'ajuster sa mise en page une fois le
+// dossier créé (masquer "Espace fournisseur" et laisser "Dossier créé"
+// prendre toute la largeur) sans dupliquer l'état `created` côté page.
+export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (created: boolean) => void }) {
   const router = useRouter();
   const { isConnected } = useAccount();
 
@@ -47,15 +56,33 @@ export function CreateShipmentForm() {
   const [cancellingDate, setCancellingDate] = useState(tomorrowPlus(30));
   const [billNumber, setBillNumber] = useState("");
   const [created, setCreated] = useState<{ id: `0x${string}`; billNumber: string } | null>(null);
+  const [shortDeadline] = useShortDeadlineMode();
 
+  const { tokenAddresses } = useTokenAddresses();
   const tokenAddress = tokenAddresses[currency];
   const { decimals, symbol } = useErc20Meta(tokenAddress);
   const { execute, stage, error, receipt, isBusy } = useContractAction();
 
   useEffect(() => {
+    // shortDeadline vient de useShortDeadlineMode, résolu de façon
+    // asynchrone (lecture localStorage côté client après le montage) : ce
+    // n'est pas une valeur dérivable au rendu, donc un effet est requis pour
+    // réappliquer la date par défaut une fois le mode connu.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCancellingDate(shortDeadline ? nowPlusMinutes(5) : tomorrowPlus(30));
+  }, [shortDeadline]);
+
+  useEffect(() => {
+    // Réagit à la confirmation de la transaction (receipt, alimenté par
+    // useWaitForTransactionReceipt) : un événement externe asynchrone, pas
+    // une valeur dérivable au rendu.
     if (stage === "success" && receipt && !created) {
       const id = findEventArg<`0x${string}`>(receipt.logs, "TransactionInitialized", "transactionID");
-      if (id) setCreated({ id, billNumber });
+      if (id) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setCreated({ id, billNumber });
+        onCreatedChange?.(true);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, receipt]);
@@ -83,7 +110,7 @@ export function CreateShipmentForm() {
       advancePaymentMode,
       advanceAmount: !needsAdvanceInput ? 0n : isFreeModel ? freeAdvanceParsed : totalAmountParsed,
       totalAmount: totalAmountParsed,
-      transactionCancellingDate: dateInputToUnix(cancellingDate),
+      transactionCancellingDate: shortDeadline ? dateTimeInputToUnix(cancellingDate) : dateInputToUnix(cancellingDate),
     };
     await execute({
       address: meridianAddress,
@@ -108,7 +135,13 @@ export function CreateShipmentForm() {
         </div>
         <div className="mt-6 flex gap-3">
           <Button onClick={() => router.push(`/transaction/${created.id}`)}>Ouvrir le dossier</Button>
-          <Button variant="secondary" onClick={() => setCreated(null)}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setCreated(null);
+              onCreatedChange?.(false);
+            }}
+          >
             Créer un autre dossier
           </Button>
         </div>
@@ -219,10 +252,10 @@ export function CreateShipmentForm() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Échéance d'annulation">
+          <Field label="Échéance d'annulation" hint={shortDeadline ? "Mode échéance courte activé (voir Outils de test)." : undefined}>
             <input
               className="field-input"
-              type="date"
+              type={shortDeadline ? "datetime-local" : "date"}
               value={cancellingDate}
               onChange={(e) => setCancellingDate(e.target.value)}
               required

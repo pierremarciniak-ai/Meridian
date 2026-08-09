@@ -5,9 +5,13 @@ import Link from "next/link";
 import { useAccount } from "wagmi";
 import { CompassIcon } from "@/components/icons";
 import { hardhatLocal } from "@/lib/web3/chain";
+import { useIsContainerPositionOracle } from "@/hooks/useIsContainerPositionOracle";
+import { useIsOwner } from "@/hooks/useIsOwner";
 
 export function Header() {
   const { chainId, isConnected } = useAccount();
+  const { isOwner } = useIsOwner();
+  const { isContainerPositionOracle } = useIsContainerPositionOracle();
   const onExpectedChain = !isConnected || chainId === hardhatLocal.id;
 
   return (
@@ -25,6 +29,22 @@ export function Header() {
             <span className="label-caps mt-1">Escrow de fret maritime</span>
           </span>
         </Link>
+
+        <nav className="hidden items-center gap-5 sm:flex">
+          <Link href="/dev-tools" className="label-caps transition-colors hover:text-accent">
+            Outils de test
+          </Link>
+          {isContainerPositionOracle && (
+            <Link href="/oracle" className="label-caps transition-colors hover:text-accent">
+              Oracle
+            </Link>
+          )}
+          {isOwner && (
+            <Link href="/admin" className="label-caps transition-colors hover:text-accent">
+              Administration
+            </Link>
+          )}
+        </nav>
 
         <div className="flex items-center gap-3">
           {!onExpectedChain && (

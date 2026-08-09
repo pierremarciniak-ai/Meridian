@@ -1,10 +1,18 @@
+"use client";
+
+import { useState } from "react";
 import { AcceptShipmentForm } from "@/components/dashboard/AcceptShipmentForm";
 import { CreateShipmentForm } from "@/components/dashboard/CreateShipmentForm";
-import { FaucetPanel } from "@/components/dashboard/FaucetPanel";
 import { MyShipmentsList } from "@/components/dashboard/MyShipmentsList";
 import { WavesIcon } from "@/components/icons";
 
 export default function Home() {
+  // Une fois le dossier créé, CreateShipmentForm affiche l'écran "Dossier
+  // créé" (ID + facture à transmettre) : "Espace fournisseur" n'a plus rien à
+  // faire sur cette même page à ce moment-là, donc on le masque et on laisse
+  // l'écran de résultat prendre toute la largeur de la section.
+  const [hasJustCreated, setHasJustCreated] = useState(false);
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-12">
       <section className="flex flex-col gap-3">
@@ -22,21 +30,18 @@ export default function Home() {
       </section>
 
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <CreateShipmentForm />
+        <div className={hasJustCreated ? "lg:col-span-5" : "lg:col-span-3"}>
+          <CreateShipmentForm onCreatedChange={setHasJustCreated} />
         </div>
-        <div className="lg:col-span-2">
-          <AcceptShipmentForm />
-        </div>
+        {!hasJustCreated && (
+          <div className="lg:col-span-2">
+            <AcceptShipmentForm />
+          </div>
+        )}
       </section>
 
       <section>
         <MyShipmentsList />
-      </section>
-
-      <section>
-        <div className="rope-divider mb-8" />
-        <FaucetPanel />
       </section>
     </div>
   );

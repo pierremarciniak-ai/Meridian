@@ -38,6 +38,12 @@ export enum UserType {
   Seller = 1,
 }
 
+export enum ContainerPositionStatus {
+  UnSet = 0,
+  InTransit = 1,
+  AtDestination = 2,
+}
+
 export const currencyLabels: Record<Currency, string> = {
   [Currency.USDC]: "USDC",
   [Currency.USDT]: "USDT",
@@ -80,4 +86,10 @@ export const advancePaymentModeLabels: Record<AdvancePaymentMode, string> = {
 export const userTypeLabels: Record<UserType, string> = {
   [UserType.Buyer]: "Acheteur",
   [UserType.Seller]: "Fournisseur",
+};
+
+export const containerPositionStatusLabels: Record<ContainerPositionStatus, string> = {
+  [ContainerPositionStatus.UnSet]: "Non renseignée",
+  [ContainerPositionStatus.InTransit]: "En transit",
+  [ContainerPositionStatus.AtDestination]: "Arrivée à destination",
 };

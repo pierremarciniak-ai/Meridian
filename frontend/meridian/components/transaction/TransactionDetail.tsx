@@ -6,8 +6,11 @@ import { CopyChip } from "@/components/CopyChip";
 import { AlertIcon, ContainerShipIcon } from "@/components/icons";
 import { StatusBadge } from "@/components/StatusBadge";
 import { BecomeSellerPanel } from "@/components/transaction/BecomeSellerPanel";
+import { ContainerPositionOraclePanel } from "@/components/transaction/ContainerPositionOraclePanel";
 import { DepositPanel } from "@/components/transaction/DepositPanel";
 import { DetailsForm } from "@/components/transaction/DetailsForm";
+import { NftMintPanel } from "@/components/transaction/NftMintPanel";
+import { RollbackPanel } from "@/components/transaction/RollbackPanel";
 import { TimelineStepper } from "@/components/transaction/TimelineStepper";
 import { TransactionSummary } from "@/components/transaction/TransactionSummary";
 import { WithdrawPanel } from "@/components/transaction/WithdrawPanel";
@@ -15,15 +18,18 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Currency, WorkflowStatus } from "@/lib/domain/enums";
 import { formatAmount } from "@/lib/domain/format";
-import { hasSeller, sameAddress, transactionExists } from "@/lib/domain/transaction";
+import { canRollbackDeposit, hasSeller, isTransactionOverdue, sameAddress, transactionExists } from "@/lib/domain/transaction";
 import { useErc20Meta } from "@/hooks/useErc20";
+import { useIsContainerPositionOracle } from "@/hooks/useIsContainerPositionOracle";
 import { useMeridianTransaction } from "@/hooks/useMeridianTransaction";
-import { tokenAddresses } from "@/lib/web3/contracts";
+import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 
 export function TransactionDetail({ id }: { id: `0x${string}` }) {
   const { address } = useAccount();
   const { data: tx, isLoading, refetch } = useMeridianTransaction(id);
+  const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[tx ? tx.currency : Currency.USDC]);
+  const { isContainerPositionOracle } = useIsContainerPositionOracle();
 
   if (isLoading) {
     return (
@@ -92,8 +98,16 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
         <p className="text-center text-sm text-subtle">Connectez votre portefeuille pour agir sur ce dossier.</p>
       )}
 
-      {tx.workflowStatus === WorkflowStatus.Initialized && !hasSeller(tx) && (
+      {tx.workflowStatus === WorkflowStatus.Initialized && !hasSeller(tx) && role !== "buyer" && (
         <BecomeSellerPanel transactionId={id} expectedBillNumber={tx.billNumber} onAccepted={() => refetch()} />
+      )}
+      {tx.workflowStatus === WorkflowStatus.Initialized && !hasSeller(tx) && role === "buyer" && (
+        <Card>
+          <p className="text-sm text-subtle">
+            En attente qu&apos;un fournisseur accepte ce dossier. Transmettez-lui l&apos;identifiant et le numéro de
+            facture.
+          </p>
+        </Card>
       )}
 
       {tx.workflowStatus === WorkflowStatus.Created &&
@@ -108,7 +122,37 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
           </Card>
         ))}
 
-      {tx.workflowStatus === WorkflowStatus.Signed && role === "buyer" && <DepositPanel transactionId={id} tx={tx} onDeposited={() => refetch()} />}
+      {tx.workflowStatus === WorkflowStatus.Signed && role === "buyer" && isTransactionOverdue(tx) && canRollbackDeposit(tx) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Échéance dépassée</CardTitle>
+            <AlertIcon className="h-6 w-6 text-danger" />
+          </CardHeader>
+          <p className="text-sm text-danger">
+            La date d&apos;annulation de ce dossier est dépassée. Le contrat enregistrera le passage en « Abandonné »
+            au moment de votre retrait ci-dessous — inutile d&apos;attendre une autre action.
+          </p>
+          <RollbackPanel transactionId={id} tx={tx} onRolledBack={() => refetch()} />
+        </Card>
+      )}
+      {tx.workflowStatus === WorkflowStatus.Signed &&
+        role === "buyer" &&
+        !(isTransactionOverdue(tx) && canRollbackDeposit(tx)) && (
+          <DepositPanel transactionId={id} tx={tx} onDeposited={() => refetch()} />
+        )}
+      {tx.workflowStatus === WorkflowStatus.Signed && role === "seller" && isTransactionOverdue(tx) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Échéance dépassée</CardTitle>
+            <AlertIcon className="h-6 w-6 text-danger" />
+          </CardHeader>
+          <p className="text-sm text-danger">
+            La date d&apos;annulation de ce dossier est dépassée. Le retrait reste possible tant que l&apos;acheteur n&apos;a
+            pas déclenché l&apos;abandon de son côté (dépôt ou récupération de fonds) — au-delà, il ne sera plus
+            possible : mieux vaut retirer sans tarder.
+          </p>
+        </Card>
+      )}
       {tx.workflowStatus === WorkflowStatus.Signed && role === "seller" && <WithdrawPanel transactionId={id} tx={tx} onWithdrawn={() => refetch()} />}
       {tx.workflowStatus === WorkflowStatus.Signed && !role && (
         <Card>
@@ -125,9 +169,17 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
           </CardHeader>
           <p className="text-sm" style={{ color: "#86efac" }}>
             {formatAmount(tx.depositedAmount, decimals)} {symbol} déposés par l&apos;acheteur et intégralement reversés au
-            fournisseur. Cycle terminé.
+            fournisseur. Transaction terminé.
           </p>
         </Card>
+      )}
+
+      {(tx.workflowStatus === WorkflowStatus.Signed || tx.workflowStatus === WorkflowStatus.Finished) && role && (
+        <NftMintPanel transactionId={id} tx={tx} role={role} onMinted={() => refetch()} />
+      )}
+
+      {tx.workflowStatus === WorkflowStatus.Signed && isContainerPositionOracle && (
+        <ContainerPositionOraclePanel transactionId={id} tx={tx} onReported={() => refetch()} />
       )}
 
       {tx.workflowStatus === WorkflowStatus.Aborted && (
@@ -137,10 +189,13 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
             <AlertIcon className="h-6 w-6 text-danger" />
           </CardHeader>
           <p className="text-sm text-danger">
-            L&apos;échéance d&apos;annulation a été dépassée avant la finalisation du dossier ; le contrat l&apos;a
-            automatiquement marqué comme abandonné. Si des fonds avaient déjà été déposés, ils restent comptabilisés
-            ci-dessus mais ne peuvent plus être mouvementés via cette interface une fois ce statut atteint.
+            {tx.buyerSanctioned
+              ? "L'acheteur a été détecté comme sanctionné au moment de sa signature ; le contrat a automatiquement abandonné le dossier."
+              : tx.sellerSanctioned
+                ? "Le fournisseur a été détecté comme sanctionné (à la signature ou au retrait) ; le contrat a automatiquement abandonné le dossier."
+                : "L'échéance d'annulation a été dépassée avant la finalisation du dossier ; le contrat l'a automatiquement marqué comme abandonné."}
           </p>
+          {role === "buyer" && canRollbackDeposit(tx) && <RollbackPanel transactionId={id} tx={tx} onRolledBack={() => refetch()} />}
         </Card>
       )}
     </div>

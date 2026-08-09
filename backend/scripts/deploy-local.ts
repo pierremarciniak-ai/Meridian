@@ -6,11 +6,12 @@ const CURRENCY = { USDC: 0, USDT: 1, EURC: 2 };
 async function main() {
   const { ethers } = await network.getOrCreate();
 
-  const [deployer, buyer, seller] = await ethers.getSigners();
+  const [deployer, buyer, seller, containerPositionOracle] = await ethers.getSigners();
 
   console.log("Deployer:", deployer.address);
   console.log("Buyer   :", buyer.address);
   console.log("Seller  :", seller.address);
+  console.log("Container position oracle:", containerPositionOracle.address);
 
   // --- 1. Déploiement des 3 mocks (6 décimales, comme les vrais USDC/USDT/EURC) ---
   const usdc = await ethers.deployContract("MockERC20", ["Mock USDC", "USDC", 6]);
@@ -45,6 +46,12 @@ async function main() {
 
   console.log(`\n${ethers.formatUnits(amount, 6)} USDC/USDT/EURC mintés vers ${buyer.address}`);
 
+  await usdc.mint(seller.address, amount);
+  await usdt.mint(seller.address, amount);
+  await eurc.mint(seller.address, amount);
+
+  console.log(`\n${ethers.formatUnits(amount, 6)} USDC/USDT/EURC mintés vers ${seller.address}`);
+
   // --- 5. Déploiement de l'oracle OFAC ---
   const sanctionsList = await ethers.deployContract("SanctionsList");
   await sanctionsList.waitForDeployment();
@@ -61,6 +68,9 @@ async function main() {
 
   await meridian.setMeridianNFTAddress(await meridianNFT.getAddress());
 
+  // --- 7. Oracle de position de conteneur (backend cron VesselFinder) ---
+  await meridian.setContainerPositionOracleAddress(containerPositionOracle.address);
+
   console.log("\n--- Adresses à copier dans .env.local Next.js ---");
   console.log("NEXT_PUBLIC_MERIDIAN_ADDRESS=", await meridian.getAddress());
   console.log("NEXT_PUBLIC_USDC_ADDRESS=", await usdc.getAddress());
@@ -68,7 +78,14 @@ async function main() {
   console.log("NEXT_PUBLIC_EURC_ADDRESS=", await eurc.getAddress());
   console.log("NEXT_PUBLIC_SANCTIONS_ORACLE_ADDRESS=", await sanctionsList.getAddress());
   console.log("NEXT_PUBLIC_MOCK_SANCTIONS_ORACLE_ADDRESS=", await sanctionsList.getAddress());
-  console.log("NEXT_PUBLIC_MERIDIAN_NFT_ADDRESS=", await meridianNFT.getAddress());
+  // Informatif seulement : le front lit désormais cette adresse on-chain
+  // (useMeridianNFTAddress) plutôt que depuis .env.local, justement pour ne
+  // plus jamais diverger d'un setMeridianNFTAddress ultérieur.
+  console.log("MeridianNFT (informatif, non lu depuis .env.local)=", await meridianNFT.getAddress());
+
+  console.log("\n--- Pour le cron container-position (frontend/meridian/.env.local) ---");
+  console.log("CONTAINER_ORACLE_PRIVATE_KEY= (clé privée du compte #3 affichée au démarrage de `npx hardhat node`)");
+  console.log("Adresse correspondante :", containerPositionOracle.address);
 }
 
 main().catch((error) => {

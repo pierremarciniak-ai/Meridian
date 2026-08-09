@@ -1,33 +1,59 @@
-import { AdvancePaymentMode, Currency, TransactionCondition, TransactionModel, UserType, WorkflowStatus } from "@/lib/domain/enums";
+import {
+  AdvancePaymentMode,
+  ContainerPositionStatus,
+  Currency,
+  TransactionCondition,
+  TransactionModel,
+  UserType,
+  WorkflowStatus,
+} from "@/lib/domain/enums";
 
 export type OnChainUser = {
   userType: UserType;
   userAddress: `0x${string}`;
-  isSubjectedToSanctions: boolean;
 };
 
+// Miroir exact du struct Transaction dans InternalFunctions.sol — mêmes
+// champs, peu importe l'ordre (viem retourne un objet nommé, pas un tuple
+// positionnel).
 export type OnChainTransaction = {
   workflowStatus: WorkflowStatus;
-  billNumber: string;
-  buyer: OnChainUser;
-  seller: OnChainUser;
   currency: Currency;
   transactionCondition: TransactionCondition;
   transactionModel: TransactionModel;
   advancePaymentMode: AdvancePaymentMode;
-  advanceAmount: bigint;
-  totalAmount: bigint;
-  transactionCancellingDate: bigint;
-  sellerDepartureDate: bigint;
-  sellerArrivalDate: bigint;
-  containerReference: string;
+  containerPositionStatus: ContainerPositionStatus;
   signedByBuyer: boolean;
   signedBySeller: boolean;
-  billHash: `0x${string}`;
+  depositCompleted: boolean;
+  partialWithdrawalCompleted: boolean;
+  withdrawalCompleted: boolean;
+  totalAmountRefunded: boolean;
+  partialAmountRefunded: boolean;
+  buyerNFTMinted: boolean;
+  sellerNFTMinted: boolean;
+  // Distinguent un TransactionAborted causé par une sanction détectée à la
+  // signature ou au retrait, d'un abandon simplement dû à l'échéance
+  // dépassée (ni l'un ni l'autre) — voir _signTransaction/withdrawFunds.
+  buyerSanctioned: boolean;
+  sellerSanctioned: boolean;
+  buyer: OnChainUser;
+  seller: OnChainUser;
+  // uint40 côté contrat : viem décode les entiers qui tiennent sûrement dans
+  // un Number (<= 48 bits) en `number`, pas en `bigint` — contrairement aux
+  // montants ci-dessous (uint128, toujours bigint). Vérifié empiriquement :
+  // c'est ce qui causait "Cannot mix BigInt and other types" dans
+  // TimeTravelPanel avant ce correctif.
+  transactionCancellingDate: number;
+  sellerDepartureDate: number;
+  sellerArrivalDate: number;
+  advanceAmount: bigint;
+  totalAmount: bigint;
   depositedAmount: bigint;
   pendingWithdrawalAmount: bigint;
-  depositCompleted: boolean;
-  withdrawalCompleted: boolean;
+  refundAmount: bigint;
+  billNumber: string;
+  containerReference: string;
 };
 
 export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
@@ -69,4 +95,38 @@ export function estimateDepositAmount(tx: OnChainTransaction): bigint {
   if (tx.depositedAmount === 0n) return tx.advanceAmount;
   if (tx.depositedAmount > 0n && tx.depositedAmount < tx.totalAmount) return tx.totalAmount - tx.depositedAmount;
   return 0n;
+}
+
+// Miroir client de la condition sur containerPositionStatus dans
+// withdrawFunds : permet d'afficher pourquoi le retrait est bloqué avant
+// d'attendre un revert on-chain. Quand AdvancePaymentMode = Immediate, le
+// contrat ignore containerPositionStatus — mais seulement pour le tout
+// premier retrait : dès que partialWithdrawalCompleted est déjà à true (un
+// retrait a déjà eu lieu), le reliquat retombe sous la même condition que
+// Deferred — voir withdrawFunds dans Meridian.sol.
+export function isContainerPositionSufficientForWithdrawal(tx: OnChainTransaction): boolean {
+  if (tx.advancePaymentMode === AdvancePaymentMode.Immediate && !tx.partialWithdrawalCompleted) return true;
+  if (tx.transactionCondition === TransactionCondition.AtTheBeginningOfDelivery) {
+    return (
+      tx.containerPositionStatus === ContainerPositionStatus.InTransit ||
+      tx.containerPositionStatus === ContainerPositionStatus.AtDestination
+    );
+  }
+  return tx.containerPositionStatus === ContainerPositionStatus.AtDestination;
+}
+
+// rollbackDeposit remet depositedAmount à 0 après le premier appel réussi :
+// sa disponibilité se résume donc à "il reste quelque chose à récupérer".
+export function canRollbackDeposit(tx: OnChainTransaction): boolean {
+  return tx.depositedAmount > 0n;
+}
+
+// Miroir client de checkAbortedStatus : le contrat ne fait cette transition
+// que paresseusement, en effet de bord du prochain appel à une fonction
+// gardée (depositFunds, rollbackDeposit...). Tant que personne ne l'a
+// déclenchée, workflowStatus reste affiché "Signed" en storage même après
+// l'échéance — sans ce miroir, le bouton de rollback resterait invisible
+// pour l'acheteur alors que l'appel réussirait déjà on-chain.
+export function isTransactionOverdue(tx: Pick<OnChainTransaction, "transactionCancellingDate">): boolean {
+  return Math.floor(Date.now() / 1000) >= tx.transactionCancellingDate;
 }

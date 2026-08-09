@@ -13,13 +13,15 @@ import {
   transactionConditionLabels,
   transactionModelLabels,
 } from "@/lib/domain/enums";
-import { dateInputToUnix, formatAmount, parseAmountInput, unixToDateInput } from "@/lib/domain/format";
+import { dateInputToUnix, dateTimeInputToUnix, formatAmount, parseAmountInput, unixToDateInput, unixToDateTimeInput } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
 import { estimateAdvanceAmount } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
+import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
+import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress, tokenAddresses } from "@/lib/web3/contracts";
+import { meridianAddress } from "@/lib/web3/contracts";
 
 export function DetailsForm({
   transactionId,
@@ -41,15 +43,32 @@ export function DetailsForm({
   const [departureDate, setDepartureDate] = useState(unixToDateInput(tx.sellerDepartureDate));
   const [arrivalDate, setArrivalDate] = useState(unixToDateInput(tx.sellerArrivalDate));
   const [containerReference, setContainerReference] = useState(tx.containerReference);
+  const [shortDeadline] = useShortDeadlineMode();
 
+  const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[currency]);
   const { execute, stage, error, isSuccess } = useContractAction();
 
   useEffect(() => {
+    // decimals vient de useErc20Meta (lecture on-chain asynchrone, 6 par
+    // défaut avant résolution) : reformater les champs texte éditables une
+    // fois la vraie valeur connue n'est pas dérivable au rendu.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTotalAmountInput(formatAmount(tx.totalAmount, decimals).replace(/\s/g, "").replace(",", "."));
     setAdvanceAmountInput(formatAmount(tx.advanceAmount, decimals).replace(/\s/g, "").replace(",", "."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [decimals]);
+
+  useEffect(() => {
+    // shortDeadline vient de useShortDeadlineMode, résolu de façon
+    // asynchrone après le montage (voir ce hook) : même raison que
+    // ci-dessus, pas une valeur dérivable au rendu.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCancellingDate(shortDeadline ? unixToDateTimeInput(tx.transactionCancellingDate) : unixToDateInput(tx.transactionCancellingDate));
+    setDepartureDate(shortDeadline ? unixToDateTimeInput(tx.sellerDepartureDate) : unixToDateInput(tx.sellerDepartureDate));
+    setArrivalDate(shortDeadline ? unixToDateTimeInput(tx.sellerArrivalDate) : unixToDateInput(tx.sellerArrivalDate));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shortDeadline]);
 
   useEffect(() => {
     if (isSuccess) onSaved();
@@ -73,7 +92,7 @@ export function DetailsForm({
       advancePaymentMode: tx.advancePaymentMode,
       advanceAmount: isFreeModel ? parseAmountInput(advanceAmountInput, decimals) : totalAmountParsed,
       totalAmount: totalAmountParsed,
-      transactionCancellingDate: dateInputToUnix(cancellingDate),
+      transactionCancellingDate: shortDeadline ? dateTimeInputToUnix(cancellingDate) : dateInputToUnix(cancellingDate),
     };
 
     if (role === "seller") {
@@ -84,8 +103,8 @@ export function DetailsForm({
         args: [
           transactionId,
           {
-            departureDate: dateInputToUnix(departureDate),
-            arrivalDate: dateInputToUnix(arrivalDate),
+            departureDate: shortDeadline ? dateTimeInputToUnix(departureDate) : dateInputToUnix(departureDate),
+            arrivalDate: shortDeadline ? dateTimeInputToUnix(arrivalDate) : dateInputToUnix(arrivalDate),
             containerReference,
           },
           details,
@@ -110,11 +129,23 @@ export function DetailsForm({
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {role === "seller" && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="Date de départ">
-              <input className="field-input" type="date" value={departureDate} onChange={(e) => setDepartureDate(e.target.value)} required />
+            <Field label="Date de départ" hint={shortDeadline ? "Mode échéance courte activé (voir Outils de test)." : undefined}>
+              <input
+                className="field-input"
+                type={shortDeadline ? "datetime-local" : "date"}
+                value={departureDate}
+                onChange={(e) => setDepartureDate(e.target.value)}
+                required
+              />
             </Field>
-            <Field label="Date d'arrivée">
-              <input className="field-input" type="date" value={arrivalDate} onChange={(e) => setArrivalDate(e.target.value)} required />
+            <Field label="Date d'arrivée" hint={shortDeadline ? "Mode échéance courte activé (voir Outils de test)." : undefined}>
+              <input
+                className="field-input"
+                type={shortDeadline ? "datetime-local" : "date"}
+                value={arrivalDate}
+                onChange={(e) => setArrivalDate(e.target.value)}
+                required
+              />
             </Field>
             <Field label="Référence conteneur">
               <input
@@ -181,8 +212,14 @@ export function DetailsForm({
               readOnly={!isFreeModel}
             />
           </Field>
-          <Field label="Échéance d'annulation">
-            <input className="field-input" type="date" value={cancellingDate} onChange={(e) => setCancellingDate(e.target.value)} required />
+          <Field label="Échéance d'annulation" hint={shortDeadline ? "Mode échéance courte activé (voir Outils de test)." : undefined}>
+            <input
+              className="field-input"
+              type={shortDeadline ? "datetime-local" : "date"}
+              value={cancellingDate}
+              onChange={(e) => setCancellingDate(e.target.value)}
+              required
+            />
           </Field>
         </div>
 

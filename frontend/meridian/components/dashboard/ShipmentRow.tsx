@@ -9,10 +9,11 @@ import { formatAmount, formatUnixDate, truncateHex } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
 import { sameAddress } from "@/lib/domain/transaction";
 import { useErc20Meta } from "@/hooks/useErc20";
-import { tokenAddresses } from "@/lib/web3/contracts";
+import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 
 export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
   const { address } = useAccount();
+  const { tokenAddresses } = useTokenAddresses();
   const { decimals } = useErc20Meta(tokenAddresses[tx.currency]);
 
   const role = sameAddress(tx.buyer.userAddress, address)
@@ -27,10 +28,10 @@ export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
       className="flex items-center justify-between gap-4 rounded-lg px-4 py-3.5 transition-colors"
       style={{ background: "var(--color-navy-850)", border: "1px solid var(--color-navy-700)" }}
     >
-      <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center gap-2">
-          <span className="truncate font-mono-tight text-sm text-foam">{tx.billNumber || truncateHex(id)}</span>
-          {role && <span className="label-caps text-accent">{role}</span>}
+          <span className="min-w-0 truncate font-mono-tight text-sm text-foam">{tx.billNumber || truncateHex(id)}</span>
+          {role && <span className="label-caps shrink-0 text-accent">{role}</span>}
         </div>
         <span className="font-mono-tight text-xs text-subtle">{truncateHex(id, 8)}</span>
       </div>

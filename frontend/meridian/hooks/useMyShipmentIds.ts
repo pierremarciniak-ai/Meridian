@@ -65,6 +65,10 @@ export function useMyShipmentIds(account: Address | undefined) {
   }, [publicClient, account]);
 
   useEffect(() => {
+    // load() rejoue des logs on-chain (système externe, asynchrone) et
+    // n'appelle setIds/setError qu'une fois la réponse RPC reçue : pas une
+    // valeur dérivable au rendu.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 

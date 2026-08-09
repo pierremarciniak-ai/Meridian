@@ -11,12 +11,14 @@ import type { OnChainTransaction } from "@/lib/domain/transaction";
 import { estimateDepositAmount } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Allowance, useErc20Balance, useErc20Meta } from "@/hooks/useErc20";
+import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { erc20Abi } from "@/lib/web3/abi/erc20";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress, tokenAddresses } from "@/lib/web3/contracts";
+import { meridianAddress } from "@/lib/web3/contracts";
 
 export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId: `0x${string}`; tx: OnChainTransaction; onDeposited: () => void }) {
   const { address } = useAccount();
+  const { tokenAddresses } = useTokenAddresses();
   const tokenAddress = tokenAddresses[tx.currency];
   const { decimals, symbol } = useErc20Meta(tokenAddress);
   const balanceQuery = useErc20Balance(tokenAddress, address);
@@ -48,7 +50,7 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
           <CardTitle>Dépôt</CardTitle>
         </CardHeader>
         <p className="text-sm" style={{ color: "#86efac" }}>
-          Financement complet : {formatAmount(tx.depositedAmount, decimals)} {symbol} déposés sur l&apos;escrow.
+          Montant déposé: {formatAmount(tx.depositedAmount, decimals)} {symbol}
         </p>
       </Card>
     );
@@ -79,9 +81,10 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
             <TxStatusLine stage={approveAction.stage} error={approveAction.error} />
             <Button
               variant="secondary"
-              disabled={insufficientBalance}
+              disabled={insufficientBalance || !tokenAddress}
               loading={approveAction.isBusy}
               onClick={() =>
+                tokenAddress &&
                 approveAction.execute({
                   address: tokenAddress,
                   abi: erc20Abi,

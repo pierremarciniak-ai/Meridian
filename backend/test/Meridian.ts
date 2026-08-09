@@ -15,6 +15,7 @@ const TransactionCondition = { AtTheBeginningOfDelivery: 0, AtTheEndOfDelivery: 
 const TransactionModel = { FullLocked: 0, PartialLocked: 1, PartialImmediate: 2, Free: 3 };
 const AdvancePaymentMode = { Immediate: 0, Deferred: 1 };
 const UserType = { Buyer: 0, Seller: 1 };
+const ContainerPositionStatus = { UnSet: 0, InTransit: 1, AtDestination: 2 };
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -28,7 +29,7 @@ describe("Meridian", function () {
   async function deployFixture() {
     const { ethers } = await network.getOrCreate();
 
-    const [deployer, buyer, seller, other] = await ethers.getSigners();
+    const [deployer, buyer, seller, other, containerPositionOracle] = await ethers.getSigners();
 
     const usdc = await ethers.deployContract("MockERC20", ["Mock USDC", "USDC", 6]);
     const usdt = await ethers.deployContract("MockERC20", ["Mock USDT", "USDT", 6]);
@@ -56,6 +57,10 @@ describe("Meridian", function () {
     const meridianNFT = await ethers.deployContract("MeridianNFT", [await meridian.getAddress()]);
     await meridian.setMeridianNFTAddress(await meridianNFT.getAddress());
 
+    // Adresse dédiée simulant le cron backend qui interroge VesselFinder :
+    // seule cette adresse peut appeler reportContainerPosition.
+    await meridian.setContainerPositionOracleAddress(containerPositionOracle.address);
+
     const mintAmount = ethers.parseUnits("10000", 6);
     await usdc.mint(buyer.address, mintAmount);
     await usdt.mint(buyer.address, mintAmount);
@@ -74,6 +79,7 @@ describe("Meridian", function () {
       buyer,
       seller,
       other,
+      containerPositionOracle,
       mintAmount,
     };
   }
@@ -166,6 +172,17 @@ describe("Meridian", function () {
     await meridian.connect(buyer).signTransactionBuyer(transactionID);
 
     return { transactionID, details, logistics, totalAmount: details.totalAmount, billNumber };
+  }
+
+  // Simule le cron backend qui interroge VesselFinder et fait remonter la
+  // position on-chain via reportContainerPosition (seul containerPositionOracle
+  // peut l'appeler — voir withdrawFunds, qui n'accepte plus ce statut en
+  // paramètre direct pour éviter qu'un vendeur ne se l'auto-déclare).
+  async function reportAtDestination(ctx: Awaited<ReturnType<typeof deployFixture>>, transactionID: string) {
+    const { meridian, containerPositionOracle } = ctx;
+    await meridian
+      .connect(containerPositionOracle)
+      .reportContainerPosition(transactionID, ContainerPositionStatus.AtDestination);
   }
 
   // Fait avancer le temps jusqu'après transactionCancellingDate.
@@ -391,6 +408,77 @@ describe("Meridian", function () {
   });
 
   // =========================================================================
+  // setContainerPositionOracleAddress
+  // =========================================================================
+  describe("setContainerPositionOracleAddress", function () {
+    it("permet au owner de configurer l'oracle de position du conteneur", async function () {
+      const { meridian, deployer, other } = await deployFixture();
+      await expect(meridian.connect(deployer).setContainerPositionOracleAddress(other.address))
+        .to.emit(meridian, "ContainerPositionOracleAddressUpdated")
+        .withArgs(other.address);
+      expect(await meridian.containerPositionOracleAddress()).to.equal(other.address);
+    });
+
+    it("refuse un appel par un compte non-owner", async function () {
+      const { meridian, other } = await deployFixture();
+      await expect(meridian.connect(other).setContainerPositionOracleAddress(other.address))
+        .to.be.revertedWithCustomError(meridian, "OwnableUnauthorizedAccount")
+        .withArgs(other.address);
+    });
+
+    it("refuse l'adresse zéro", async function () {
+      const { meridian, deployer } = await deployFixture();
+      await expect(
+        meridian.connect(deployer).setContainerPositionOracleAddress(ZERO_ADDRESS)
+      ).to.be.revertedWith("Invalid container position oracle address");
+    });
+  });
+
+  // =========================================================================
+  // reportContainerPosition
+  // =========================================================================
+  describe("reportContainerPosition", function () {
+    it("permet à l'oracle de reporter la position du conteneur", async function () {
+      const ctx = await deployFixture();
+      const { meridian, containerPositionOracle } = ctx;
+      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-POS-1");
+
+      await expect(
+        meridian
+          .connect(containerPositionOracle)
+          .reportContainerPosition(transactionID, ContainerPositionStatus.InTransit)
+      )
+        .to.emit(meridian, "ContainerPositionReported")
+        .withArgs(transactionID, ContainerPositionStatus.InTransit);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.containerPositionStatus).to.equal(ContainerPositionStatus.InTransit);
+    });
+
+    it("refuse un appel par quelqu'un d'autre que l'oracle configuré (ex. le vendeur lui-même)", async function () {
+      const ctx = await deployFixture();
+      const { meridian, seller } = ctx;
+      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-POS-2");
+
+      await expect(
+        meridian.connect(seller).reportContainerPosition(transactionID, ContainerPositionStatus.AtDestination)
+      ).to.be.revertedWith("You're not the container position oracle");
+    });
+
+    it("refuse tant que la transaction n'est pas Signed", async function () {
+      const ctx = await deployFixture();
+      const { meridian, containerPositionOracle } = ctx;
+      const { transactionID } = await initAndCreate(ctx, "BILL-POS-3");
+
+      await expect(
+        meridian
+          .connect(containerPositionOracle)
+          .reportContainerPosition(transactionID, ContainerPositionStatus.InTransit)
+      ).to.be.revertedWith("Transaction is not signed");
+    });
+  });
+
+  // =========================================================================
   // toggleSanctionsCheck
   // =========================================================================
   describe("toggleSanctionsCheck", function () {
@@ -476,6 +564,59 @@ describe("Meridian", function () {
       const stored = await meridian.getTransaction(transactionID);
       expect(stored.advanceAmount).to.equal((advanceInput * 30n) / 100n);
       expect(stored.advancePaymentMode).to.equal(AdvancePaymentMode.Deferred);
+    });
+
+    it("force AdvancePaymentMode.Deferred pour FullLocked et PartialLocked, quelle que soit la valeur demandée", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, buyer } = ctx;
+      const totalAmount = ethers.parseUnits("1000", 6);
+      const cancellingDate = await futureDate(ethers);
+
+      for (const transactionModel of [TransactionModel.FullLocked, TransactionModel.PartialLocked]) {
+        const details = buildDetails(
+          { transactionModel, advancePaymentMode: AdvancePaymentMode.Immediate },
+          { totalAmount, transactionCancellingDate: cancellingDate }
+        );
+        const tx = await meridian.connect(buyer).initializeTransaction(details, `BILL-APM-${transactionModel}`);
+        const transactionID = await extractTransactionID(meridian, tx);
+        const stored = await meridian.getTransaction(transactionID);
+        expect(stored.advancePaymentMode).to.equal(AdvancePaymentMode.Deferred);
+      }
+    });
+
+    it("force AdvancePaymentMode.Immediate pour PartialImmediate, quelle que soit la valeur demandée", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, buyer } = ctx;
+      const totalAmount = ethers.parseUnits("1000", 6);
+      const cancellingDate = await futureDate(ethers);
+      const details = buildDetails(
+        { transactionModel: TransactionModel.PartialImmediate, advancePaymentMode: AdvancePaymentMode.Deferred },
+        { totalAmount, transactionCancellingDate: cancellingDate }
+      );
+
+      const tx = await meridian.connect(buyer).initializeTransaction(details, "BILL-APM-PI");
+      const transactionID = await extractTransactionID(meridian, tx);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.advancePaymentMode).to.equal(AdvancePaymentMode.Immediate);
+    });
+
+    it("respecte l'AdvancePaymentMode demandé pour Free (Immediate ou Deferred)", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, buyer } = ctx;
+      const totalAmount = ethers.parseUnits("1000", 6);
+      const cancellingDate = await futureDate(ethers);
+
+      for (const advancePaymentMode of [AdvancePaymentMode.Immediate, AdvancePaymentMode.Deferred]) {
+        const details = buildDetails(
+          { transactionModel: TransactionModel.Free, advancePaymentMode },
+          { totalAmount, transactionCancellingDate: cancellingDate }
+        );
+        const tx = await meridian.connect(buyer).initializeTransaction(details, `BILL-APM-FREE-${advancePaymentMode}`);
+        const transactionID = await extractTransactionID(meridian, tx);
+        const stored = await meridian.getTransaction(transactionID);
+        expect(stored.advancePaymentMode).to.equal(advancePaymentMode);
+      }
     });
 
     it("refuse un totalAmount à zéro", async function () {
@@ -588,6 +729,16 @@ describe("Meridian", function () {
         .to.be.revertedWithCustomError(meridian, "AddressIsSanctioned")
         .withArgs(seller.address);
     });
+
+    it("refuse que l'acheteur crée lui-même son propre dossier", async function () {
+      const ctx = await deployFixture();
+      const { meridian, buyer } = ctx;
+      const { transactionID } = await initializeOnly(ctx, "BILL-SELF");
+
+      await expect(
+        meridian.connect(buyer).createTransaction(transactionID, "BILL-SELF")
+      ).to.be.revertedWith("Buyer cannot be the seller");
+    });
   });
 
   // =========================================================================
@@ -662,8 +813,15 @@ describe("Meridian", function () {
 
     it("permet à l'acheteur de mettre à jour les détails communs", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, buyer } = ctx;
+      const { ethers, meridian, buyer, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-5");
+
+      const logistics = {
+        departureDate: await futureDate(ethers, 5),
+        arrivalDate: await futureDate(ethers, 15),
+        containerReference: "REF-STD-5",
+      };
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
 
       const newDetails = { ...details, totalAmount: ethers.parseUnits("350", 6) };
 
@@ -677,8 +835,15 @@ describe("Meridian", function () {
 
     it("réinitialise les signatures après une mise à jour des détails", async function () {
       const ctx = await deployFixture();
-      const { meridian, buyer, seller } = ctx;
+      const { ethers, meridian, buyer, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-6");
+
+      const logistics = {
+        departureDate: await futureDate(ethers, 5),
+        arrivalDate: await futureDate(ethers, 15),
+        containerReference: "REF-STD-6",
+      };
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
 
       await meridian.connect(seller).signTransactionSeller(transactionID);
       expect((await meridian.getTransaction(transactionID)).signedBySeller).to.equal(true);
@@ -697,6 +862,111 @@ describe("Meridian", function () {
         meridian.connect(other).saveTransactionDetailsBuyer(transactionID, details)
       ).to.be.revertedWith("You're not the declared buyer");
     });
+
+    it("refuse la mise à jour acheteur tant que le vendeur n'a pas renseigné la logistique", async function () {
+      const ctx = await deployFixture();
+      const { meridian, buyer } = ctx;
+      const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-8");
+
+      await expect(
+        meridian.connect(buyer).saveTransactionDetailsBuyer(transactionID, details)
+      ).to.be.revertedWith("Departure date not set");
+    });
+
+    // saveCommonTransactionDetails (appelée par saveTransactionDetailsSeller
+    // ET saveTransactionDetailsBuyer) porte sa propre copie de ces deux
+    // require, distincte de celle d'initializeTransaction : les tester ici
+    // aussi évite qu'une régression sur cette copie passe inaperçue.
+    it("refuse un totalAmount à zéro (via saveTransactionDetailsSeller)", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, seller } = ctx;
+      const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-9");
+
+      const logistics = {
+        departureDate: await futureDate(ethers, 5),
+        arrivalDate: await futureDate(ethers, 15),
+        containerReference: "REF-STD-9",
+      };
+      const badDetails = { ...details, totalAmount: 0 };
+
+      await expect(
+        meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, badDetails)
+      ).to.be.revertedWith("Total amount must be greater than zero");
+    });
+
+    it("refuse une date d'annulation dans le passé (via saveTransactionDetailsBuyer)", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, buyer, seller } = ctx;
+      const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-10");
+
+      const logistics = {
+        departureDate: await futureDate(ethers, 5),
+        arrivalDate: await futureDate(ethers, 15),
+        containerReference: "REF-STD-10",
+      };
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+
+      const pastDate = (await futureDate(ethers, 0)) - 1000;
+      const badDetails = { ...details, transactionCancellingDate: pastDate };
+
+      await expect(
+        meridian.connect(buyer).saveTransactionDetailsBuyer(transactionID, badDetails)
+      ).to.be.revertedWith("Transaction cancelling date must be in the future");
+    });
+
+    it("abandonne la transaction (sans revert, sans sauvegarde) si le vendeur est sanctionné", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, mockSanctionsOracle, buyer, seller } = ctx;
+      const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-SANCTION-SELLER");
+
+      await mockSanctionsOracle.setSanctioned(seller.address);
+
+      const logistics = {
+        departureDate: await futureDate(ethers, 5),
+        arrivalDate: await futureDate(ethers, 15),
+        containerReference: "REF-SANCTION-SELLER",
+      };
+
+      await expect(meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details))
+        .to.emit(meridian, "TransactionAborted")
+        .withArgs(transactionID, buyer.address, seller.address);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      expect(stored.sellerSanctioned).to.equal(true);
+      expect(stored.buyerSanctioned).to.equal(false);
+      // L'abandon court-circuite la sauvegarde : rien n'a été enregistré.
+      expect(stored.containerReference).to.equal("");
+      expect(stored.sellerDepartureDate).to.equal(0);
+    });
+
+    it("abandonne la transaction (sans revert, sans sauvegarde) si l'acheteur est sanctionné", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, mockSanctionsOracle, buyer, seller } = ctx;
+      const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-SANCTION-BUYER");
+
+      const logistics = {
+        departureDate: await futureDate(ethers, 5),
+        arrivalDate: await futureDate(ethers, 15),
+        containerReference: "REF-SANCTION-BUYER",
+      };
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+
+      await mockSanctionsOracle.setSanctioned(buyer.address);
+
+      const newDetails = { ...details, totalAmount: ethers.parseUnits("999", 6) };
+
+      await expect(meridian.connect(buyer).saveTransactionDetailsBuyer(transactionID, newDetails))
+        .to.emit(meridian, "TransactionAborted")
+        .withArgs(transactionID, buyer.address, seller.address);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      expect(stored.buyerSanctioned).to.equal(true);
+      expect(stored.sellerSanctioned).to.equal(false);
+      // Les nouveaux détails n'ont pas été appliqués.
+      expect(stored.totalAmount).to.equal(details.totalAmount);
+    });
   });
 
   // =========================================================================
@@ -705,8 +975,15 @@ describe("Meridian", function () {
   describe("signTransactionSeller / signTransactionBuyer", function () {
     it("passe en TransactionSigned quand les deux parties ont signé", async function () {
       const ctx = await deployFixture();
-      const { meridian, buyer, seller } = ctx;
-      const { transactionID } = await initAndCreate(ctx, "BILL-SIGN");
+      const { ethers, meridian, buyer, seller } = ctx;
+      const { transactionID, details } = await initAndCreate(ctx, "BILL-SIGN");
+
+      const logistics = {
+        departureDate: await futureDate(ethers, 5),
+        arrivalDate: await futureDate(ethers, 15),
+        containerReference: "REF-SIGN",
+      };
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
 
       await expect(meridian.connect(seller).signTransactionSeller(transactionID))
         .to.emit(meridian, "TransactionPartiallySigned")
@@ -741,10 +1018,37 @@ describe("Meridian", function () {
       );
     });
 
+    it("refuse la signature vendeur tant que la logistique n'est pas renseignée", async function () {
+      const ctx = await deployFixture();
+      const { meridian, seller } = ctx;
+      const { transactionID } = await initAndCreate(ctx, "BILL-SIGN-4");
+
+      await expect(meridian.connect(seller).signTransactionSeller(transactionID)).to.be.revertedWith(
+        "Departure date not set"
+      );
+    });
+
+    it("refuse la signature acheteur tant que la logistique n'est pas renseignée", async function () {
+      const ctx = await deployFixture();
+      const { meridian, buyer } = ctx;
+      const { transactionID } = await initAndCreate(ctx, "BILL-SIGN-5");
+
+      await expect(meridian.connect(buyer).signTransactionBuyer(transactionID)).to.be.revertedWith(
+        "Departure date not set"
+      );
+    });
+
     it("abandonne la transaction (sans revert) si le signataire est sanctionné", async function () {
       const ctx = await deployFixture();
-      const { meridian, mockSanctionsOracle, seller } = ctx;
-      const { transactionID } = await initAndCreate(ctx, "BILL-SIGN-ABORT");
+      const { ethers, meridian, mockSanctionsOracle, seller } = ctx;
+      const { transactionID, details } = await initAndCreate(ctx, "BILL-SIGN-ABORT");
+
+      const logistics = {
+        departureDate: await futureDate(ethers, 5),
+        arrivalDate: await futureDate(ethers, 15),
+        containerReference: "REF-SIGN-ABORT",
+      };
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
 
       await mockSanctionsOracle.setSanctioned(seller.address);
 
@@ -756,6 +1060,30 @@ describe("Meridian", function () {
       const stored = await meridian.getTransaction(transactionID);
       expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
       expect(stored.signedBySeller).to.equal(false);
+      expect(stored.sellerSanctioned).to.equal(true);
+      expect(stored.buyerSanctioned).to.equal(false);
+    });
+
+    it("distingue un abandon pour cause de sanction acheteur (buyerSanctioned) de celui du vendeur", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, mockSanctionsOracle, buyer, seller } = ctx;
+      const { transactionID, details } = await initAndCreate(ctx, "BILL-SIGN-ABORT-BUYER");
+
+      const logistics = {
+        departureDate: await futureDate(ethers, 5),
+        arrivalDate: await futureDate(ethers, 15),
+        containerReference: "REF-SIGN-ABORT-BUYER",
+      };
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+
+      await mockSanctionsOracle.setSanctioned(buyer.address);
+
+      await expect(meridian.connect(buyer).signTransactionBuyer(transactionID)).to.emit(meridian, "TransactionAborted");
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      expect(stored.buyerSanctioned).to.equal(true);
+      expect(stored.sellerSanctioned).to.equal(false);
     });
   });
 
@@ -992,6 +1320,52 @@ describe("Meridian", function () {
       );
     });
 
+    it("abandonne le dépôt (sans transfert, sans revert) si le vendeur est sanctionné", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, mockSanctionsOracle, buyer, seller } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.FullLocked,
+      });
+
+      await mockSanctionsOracle.setSanctioned(seller.address);
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+
+      const buyerBalanceBefore = await usdc.balanceOf(buyer.address);
+
+      await expect(meridian.connect(buyer).depositFunds(transactionID))
+        .to.emit(meridian, "TransactionAborted")
+        .withArgs(transactionID, buyer.address, seller.address);
+
+      expect(await usdc.balanceOf(buyer.address)).to.equal(buyerBalanceBefore);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      expect(stored.sellerSanctioned).to.equal(true);
+      expect(stored.buyerSanctioned).to.equal(false);
+      expect(stored.depositedAmount).to.equal(0);
+    });
+
+    it("abandonne le dépôt (sans transfert, sans revert) si l'acheteur est sanctionné", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, mockSanctionsOracle, buyer, seller } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.FullLocked,
+      });
+
+      await mockSanctionsOracle.setSanctioned(buyer.address);
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+
+      await expect(meridian.connect(buyer).depositFunds(transactionID))
+        .to.emit(meridian, "TransactionAborted")
+        .withArgs(transactionID, buyer.address, seller.address);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      expect(stored.buyerSanctioned).to.equal(true);
+      expect(stored.sellerSanctioned).to.equal(false);
+      expect(stored.depositedAmount).to.equal(0);
+    });
+
     it("refuse si le token de la devise n'est pas configuré", async function () {
       const ctx = await deployFixture();
       const { ethers, mockSanctionsOracle, sanctionsOracle, buyer, seller } = ctx;
@@ -1065,6 +1439,213 @@ describe("Meridian", function () {
       );
     });
 
+    it("abandonne le retrait (sans transfert, sans revert) si le vendeur est sanctionné", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, mockSanctionsOracle, buyer, seller } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.FullLocked,
+      });
+
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await meridian.connect(buyer).depositFunds(transactionID);
+      await reportAtDestination(ctx, transactionID);
+
+      await mockSanctionsOracle.setSanctioned(seller.address);
+
+      const sellerBalanceBefore = await usdc.balanceOf(seller.address);
+
+      await expect(meridian.connect(seller).withdrawFunds(transactionID))
+        .to.emit(meridian, "TransactionAborted")
+        .withArgs(transactionID, buyer.address, seller.address);
+
+      expect(await usdc.balanceOf(seller.address)).to.equal(sellerBalanceBefore);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      // Rien n'a été retiré : le montant en attente reste intact (utile ensuite
+      // pour un éventuel rollbackDeposit côté acheteur).
+      expect(stored.pendingWithdrawalAmount).to.equal(totalAmount);
+      expect(stored.sellerSanctioned).to.equal(true);
+      expect(stored.buyerSanctioned).to.equal(false);
+    });
+
+    it("abandonne le retrait (sans transfert, sans revert) si l'acheteur est sanctionné", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, mockSanctionsOracle, buyer, seller } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.FullLocked,
+      });
+
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await meridian.connect(buyer).depositFunds(transactionID);
+      await reportAtDestination(ctx, transactionID);
+
+      await mockSanctionsOracle.setSanctioned(buyer.address);
+
+      const sellerBalanceBefore = await usdc.balanceOf(seller.address);
+
+      await expect(meridian.connect(seller).withdrawFunds(transactionID))
+        .to.emit(meridian, "TransactionAborted")
+        .withArgs(transactionID, buyer.address, seller.address);
+
+      expect(await usdc.balanceOf(seller.address)).to.equal(sellerBalanceBefore);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      expect(stored.pendingWithdrawalAmount).to.equal(totalAmount);
+      expect(stored.buyerSanctioned).to.equal(true);
+      expect(stored.sellerSanctioned).to.equal(false);
+    });
+
+    it("refuse tant que la position du conteneur n'a pas été reportée (AtTheEndOfDelivery)", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, buyer, seller } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.FullLocked,
+      });
+
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await meridian.connect(buyer).depositFunds(transactionID);
+
+      await expect(meridian.connect(seller).withdrawFunds(transactionID)).to.be.revertedWith(
+        "Container must be at destination for withdrawal"
+      );
+    });
+
+    // Le test ci-dessus utilise FullLocked, où AdvancePaymentMode.Deferred est
+    // imposé (calculateAdvancePaymentMode), pas choisi. Free est le seul
+    // modèle où Deferred est un vrai choix explicite : on vérifie ici que la
+    // porte containerPositionStatus bloque bien le retrait indépendamment de
+    // ce choix, et pas seulement pour la valeur par défaut/forcée.
+    it("refuse le retrait tant que la position n'a pas été reportée (Free, AdvancePaymentMode.Deferred)", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, buyer, seller } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.Free,
+        advancePaymentMode: AdvancePaymentMode.Deferred,
+      });
+
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await meridian.connect(buyer).depositFunds(transactionID);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.advancePaymentMode).to.equal(AdvancePaymentMode.Deferred);
+      expect(stored.containerPositionStatus).to.equal(ContainerPositionStatus.UnSet);
+
+      await expect(meridian.connect(seller).withdrawFunds(transactionID)).to.be.revertedWith(
+        "Container must be at destination for withdrawal"
+      );
+    });
+
+    // Contrepartie du test ci-dessus : quand AdvancePaymentMode = Immediate,
+    // withdrawFunds ne doit plus du tout regarder containerPositionStatus —
+    // le vendeur peut retirer dès que l'acheteur a déposé, sans attendre le
+    // moindre report de position (même UnSet, jamais reporté).
+    it("permet le retrait dès le dépôt, sans attendre la position du conteneur (Free, AdvancePaymentMode.Immediate)", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, buyer, seller } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.Free,
+        advancePaymentMode: AdvancePaymentMode.Immediate,
+      });
+
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await meridian.connect(buyer).depositFunds(transactionID);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.advancePaymentMode).to.equal(AdvancePaymentMode.Immediate);
+      expect(stored.containerPositionStatus).to.equal(ContainerPositionStatus.UnSet);
+
+      await expect(meridian.connect(seller).withdrawFunds(transactionID))
+        .to.emit(meridian, "FundsWithdrawn")
+        .withArgs(transactionID, seller.address, totalAmount, Currency.USDC);
+    });
+
+    it("permet le retrait dès le dépôt, sans attendre la position du conteneur (PartialImmediate)", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, usdc, buyer, seller } = ctx;
+      const { transactionID } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.PartialImmediate,
+        advanceAmount: ethers.parseUnits("1000", 6),
+      });
+
+      const advance = (ethers.parseUnits("1000", 6) * 15n) / 100n;
+      await usdc.connect(buyer).approve(await meridian.getAddress(), advance);
+      await meridian.connect(buyer).depositFunds(transactionID);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.advancePaymentMode).to.equal(AdvancePaymentMode.Immediate);
+      expect(stored.containerPositionStatus).to.equal(ContainerPositionStatus.UnSet);
+
+      await expect(meridian.connect(seller).withdrawFunds(transactionID))
+        .to.emit(meridian, "FundsWithdrawn")
+        .withArgs(transactionID, seller.address, advance, Currency.USDC);
+    });
+
+    // Le bypass "Immediate" ne vaut que pour le tout premier retrait :
+    // partialWithdrawalCompleted passe à true après ce premier retrait, et
+    // le reliquat (déposé ensuite) redevient soumis à la même condition de
+    // position que Deferred, même si advancePaymentMode reste Immediate.
+    it("réapplique la condition de position dès le second retrait, même en AdvancePaymentMode.Immediate", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, usdc, buyer, seller } = ctx;
+      const totalAmount = ethers.parseUnits("1000", 6);
+      const { transactionID } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.PartialImmediate,
+        advanceAmount: totalAmount,
+      });
+      const advance = (totalAmount * 15n) / 100n;
+      const remainder = totalAmount - advance;
+
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+
+      // 1er dépôt (l'acompte) + 1er retrait : Immediate, aucune position requise.
+      await meridian.connect(buyer).depositFunds(transactionID);
+      await expect(meridian.connect(seller).withdrawFunds(transactionID))
+        .to.emit(meridian, "FundsWithdrawn")
+        .withArgs(transactionID, seller.address, advance, Currency.USDC);
+
+      let stored = await meridian.getTransaction(transactionID);
+      expect(stored.partialWithdrawalCompleted).to.equal(true);
+
+      // 2e dépôt (le reliquat) : le retrait doit désormais respecter la même
+      // condition de position que Deferred, alors même qu'advancePaymentMode
+      // vaut toujours Immediate.
+      await meridian.connect(buyer).depositFunds(transactionID);
+      await expect(meridian.connect(seller).withdrawFunds(transactionID)).to.be.revertedWith(
+        "Container must be at destination for withdrawal"
+      );
+
+      await reportAtDestination(ctx, transactionID);
+
+      await expect(meridian.connect(seller).withdrawFunds(transactionID))
+        .to.emit(meridian, "FundsWithdrawn")
+        .withArgs(transactionID, seller.address, remainder, Currency.USDC)
+        .and.to.emit(meridian, "TransactionCompleted");
+
+      stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Completed);
+      expect(stored.withdrawalCompleted).to.equal(true);
+    });
+
+    it("accepte InTransit ou AtDestination pour la condition AtTheBeginningOfDelivery", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, buyer, seller, containerPositionOracle } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.FullLocked,
+        transactionCondition: TransactionCondition.AtTheBeginningOfDelivery,
+      });
+
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await meridian.connect(buyer).depositFunds(transactionID);
+
+      await meridian
+        .connect(containerPositionOracle)
+        .reportContainerPosition(transactionID, ContainerPositionStatus.InTransit);
+
+      await expect(meridian.connect(seller).withdrawFunds(transactionID)).to.emit(meridian, "FundsWithdrawn");
+    });
+
     it("permet au vendeur de retirer les fonds déposés et transfère les tokens", async function () {
       const ctx = await deployFixture();
       const { meridian, usdc, buyer, seller } = ctx;
@@ -1074,6 +1655,7 @@ describe("Meridian", function () {
 
       await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
       await meridian.connect(buyer).depositFunds(transactionID);
+      await reportAtDestination(ctx, transactionID);
 
       const sellerBalanceBefore = await usdc.balanceOf(seller.address);
 
@@ -1097,6 +1679,7 @@ describe("Meridian", function () {
 
       await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
       await meridian.connect(buyer).depositFunds(transactionID);
+      await reportAtDestination(ctx, transactionID);
 
       await expect(meridian.connect(seller).withdrawFunds(transactionID))
         .to.emit(meridian, "TransactionCompleted")
@@ -1119,6 +1702,7 @@ describe("Meridian", function () {
       const advance = (totalAmount * 30n) / 100n;
       await usdc.connect(buyer).approve(await meridian.getAddress(), advance);
       await meridian.connect(buyer).depositFunds(transactionID);
+      await reportAtDestination(ctx, transactionID);
 
       await meridian.connect(seller).withdrawFunds(transactionID);
 
@@ -1136,6 +1720,7 @@ describe("Meridian", function () {
 
       await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
       await meridian.connect(buyer).depositFunds(transactionID);
+      await reportAtDestination(ctx, transactionID);
       await meridian.connect(seller).withdrawFunds(transactionID);
 
       await expect(meridian.connect(seller).withdrawFunds(transactionID)).to.be.revertedWith(
@@ -1152,6 +1737,64 @@ describe("Meridian", function () {
         "You're not the declared seller"
       );
     });
+
+    // Dépose autant de fois que nécessaire pour couvrir totalAmount : 1 appel
+    // pour FullLocked/Free (advanceAmount=0), 2 pour PartialLocked/PartialImmediate
+    // (acompte, puis reliquat) — voir calculateDepositAmount.
+    async function depositUntilComplete(ctx: Awaited<ReturnType<typeof deployFixture>>, transactionID: string) {
+      const { meridian, buyer } = ctx;
+      let stored = await meridian.getTransaction(transactionID);
+      while (!stored.depositCompleted) {
+        await meridian.connect(buyer).depositFunds(transactionID);
+        stored = await meridian.getTransaction(transactionID);
+      }
+    }
+
+    // Couverture systématique de withdrawFunds pour chaque TransactionModel,
+    // y compris les 2 AdvancePaymentMode possibles pour Free (les autres
+    // modèles imposent le leur — voir les tests de calculateAdvancePaymentMode
+    // dans initializeTransaction ci-dessus).
+    const modelConfigs = [
+      { label: "FullLocked", slug: "FULL", transactionModel: TransactionModel.FullLocked, advancePaymentMode: AdvancePaymentMode.Deferred },
+      { label: "PartialLocked", slug: "PLOCK", transactionModel: TransactionModel.PartialLocked, advancePaymentMode: AdvancePaymentMode.Deferred },
+      { label: "PartialImmediate", slug: "PIMM", transactionModel: TransactionModel.PartialImmediate, advancePaymentMode: AdvancePaymentMode.Immediate },
+      { label: "Free (AdvancePaymentMode.Immediate)", slug: "FREE-IMM", transactionModel: TransactionModel.Free, advancePaymentMode: AdvancePaymentMode.Immediate },
+      { label: "Free (AdvancePaymentMode.Deferred)", slug: "FREE-DEF", transactionModel: TransactionModel.Free, advancePaymentMode: AdvancePaymentMode.Deferred },
+    ];
+
+    for (const { label, slug, transactionModel, advancePaymentMode } of modelConfigs) {
+      it(`retire l'intégralité et complète la transaction pour le modèle ${label}`, async function () {
+        const ctx = await deployFixture();
+        const { ethers, meridian, usdc, buyer, seller } = ctx;
+        const advanceAmount =
+          transactionModel === TransactionModel.PartialLocked || transactionModel === TransactionModel.PartialImmediate
+            ? ethers.parseUnits("1000", 6)
+            : 0;
+
+        const { transactionID, totalAmount } = await createAndSignTransaction(
+          ctx,
+          { transactionModel, advancePaymentMode, advanceAmount },
+          {},
+          `BILL-MODEL-${slug}`
+        );
+
+        await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+        await depositUntilComplete(ctx, transactionID);
+        await reportAtDestination(ctx, transactionID);
+
+        const sellerBalanceBefore = await usdc.balanceOf(seller.address);
+
+        await expect(meridian.connect(seller).withdrawFunds(transactionID)).to.emit(meridian, "TransactionCompleted");
+
+        const sellerBalanceAfter = await usdc.balanceOf(seller.address);
+        expect(sellerBalanceAfter - sellerBalanceBefore).to.equal(totalAmount);
+
+        const stored = await meridian.getTransaction(transactionID);
+        expect(stored.workflowStatus).to.equal(WorkflowStatus.Completed);
+        expect(stored.withdrawalCompleted).to.equal(true);
+        expect(stored.pendingWithdrawalAmount).to.equal(0);
+      });
+    }
   });
 
   // =========================================================================
