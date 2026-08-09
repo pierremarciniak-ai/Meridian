@@ -375,16 +375,6 @@ export const meridianNftAbi = [
             "type": "uint40"
           },
           {
-            "internalType": "uint40",
-            "name": "sellerDepartureDate",
-            "type": "uint40"
-          },
-          {
-            "internalType": "uint40",
-            "name": "sellerArrivalDate",
-            "type": "uint40"
-          },
-          {
             "internalType": "string",
             "name": "containerReference",
             "type": "string"
@@ -493,16 +483,6 @@ export const meridianNftAbi = [
             "type": "uint40"
           },
           {
-            "internalType": "uint40",
-            "name": "sellerDepartureDate",
-            "type": "uint40"
-          },
-          {
-            "internalType": "uint40",
-            "name": "sellerArrivalDate",
-            "type": "uint40"
-          },
-          {
             "internalType": "string",
             "name": "containerReference",
             "type": "string"
@@ -602,16 +582,6 @@ export const meridianNftAbi = [
           {
             "internalType": "uint40",
             "name": "transactionCancellingDate",
-            "type": "uint40"
-          },
-          {
-            "internalType": "uint40",
-            "name": "sellerDepartureDate",
-            "type": "uint40"
-          },
-          {
-            "internalType": "uint40",
-            "name": "sellerArrivalDate",
             "type": "uint40"
           },
           {

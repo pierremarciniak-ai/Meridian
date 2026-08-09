@@ -20,7 +20,7 @@ import { meridianAddress } from "@/lib/web3/contracts";
 // Unix, montant sans division par les decimals — voir buildTokenURI dans
 // MeridianNFT.sol) : on les reformate ici pour l'affichage, comme partout
 // ailleurs dans l'app (formatUnixDate/formatAmount).
-const DATE_TRAITS = new Set(["Cancelling Date", "Seller Departure Date", "Seller Arrival Date"]);
+const DATE_TRAITS = new Set(["Expiration Date"]);
 const AMOUNT_TRAITS = new Set(["Advance Amount", "Total Amount"]);
 
 function formatAttrValue(attr: NftAttribute, decimals: number, symbol: string): string {

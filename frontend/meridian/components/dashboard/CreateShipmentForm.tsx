@@ -252,7 +252,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Échéance d'annulation" hint={shortDeadline ? "Mode échéance courte activé (voir Outils de test)." : undefined}>
+          <Field label="Date d'expiration de la provision" hint={shortDeadline ? "Mode échéance courte activé (voir Outils de test)." : undefined}>
             <input
               className="field-input"
               type={shortDeadline ? "datetime-local" : "date"}

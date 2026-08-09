@@ -35,8 +35,6 @@ interface IMeridianNFT {
         uint128 advanceAmount;
         uint128 totalAmount;
         uint40 transactionCancellingDate;
-        uint40 sellerDepartureDate;
-        uint40 sellerArrivalDate;
         string containerReference;
     }
 
@@ -110,9 +108,9 @@ abstract contract InternalFunctions is Ownable {
     // consécutifs dans la déclaration, et un struct/string/array force
     // toujours un nouveau slot avant ET après lui. On regroupe donc tous les
     // enums/bools en tête (1 slot), les deux User ensuite (1 slot chacun,
-    // déjà compacts en interne), puis les uint réduits (timestamps en
+    // déjà compacts en interne), puis les uint réduits (timestamp en
     // uint40, montants en uint128) group par group de 32 bytes, et les deux
-    // string en tout dernier. Résultat : ~9 slots au lieu de 16.
+    // string en tout dernier.
     struct Transaction {
         WorkflowStatus workflowStatus;
         Currency currency;
@@ -140,11 +138,8 @@ abstract contract InternalFunctions is Ownable {
         User buyer;
         User seller;
 
-        // Timestamps : uint40 suffit très largement (valide jusqu'à l'an
-        // 36812), et les 3 se packent dans un seul slot (15 bytes).
+        // uint40 suffit très largement (valide jusqu'à l'an 36812).
         uint40 transactionCancellingDate;
-        uint40 sellerDepartureDate;
-        uint40 sellerArrivalDate;
 
         // Montants : uint128 suffit très largement pour des montants de
         // tokens (max ≈ 3,4×10^38, aucune stablecoin n'en approche). Les
@@ -159,14 +154,12 @@ abstract contract InternalFunctions is Ownable {
         string containerReference;
         // uint creationDate;
         // uint signedDate;
-        // uint departureDate;
-        // uint arrivalDate;
         // uint cancellationDate;
         // uint completionDate;
     }
 
-    // TransactionDetailsInput / SellerLogisticsInput / ShipPosition restent
-    // volontairement en uint (256) : ce sont des structs calldata-only,
+    // TransactionDetailsInput / ShipPosition restent volontairement en uint
+    // (256) : ce sont des structs calldata-only,
     // jamais écrites en storage. L'encodage ABI/calldata word-aligne chaque
     // champ sur 32 bytes quelle que soit sa largeur déclarée, donc les
     // réduire n'apporterait aucun gain de gas ici, juste des casts en plus
@@ -180,12 +173,6 @@ abstract contract InternalFunctions is Ownable {
         uint advanceAmount;
         uint totalAmount;
         uint transactionCancellingDate;
-    }
-
-    struct SellerLogisticsInput {
-        uint departureDate;
-        uint arrivalDate;
-        string containerReference;
     }
 
     struct ShipPosition {
@@ -248,8 +235,6 @@ abstract contract InternalFunctions is Ownable {
     }
 
     modifier sellerInfosCompleted(bytes32 _transactionID) {
-        require(TransactionsList[_transactionID].sellerDepartureDate != 0, "Departure date not set");
-        require(TransactionsList[_transactionID].sellerArrivalDate != 0, "Arrival date not set");
         require(bytes(TransactionsList[_transactionID].containerReference).length > 0, "Container reference cannot be empty");
         _;
     }
@@ -439,7 +424,7 @@ abstract contract InternalFunctions is Ownable {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
         // Champs assignés un par un plutôt qu'un seul struct literal nommé :
-        // avec 14 champs, le literal fait "stack too deep" à la compilation
+        // avec 12 champs, le literal fait "stack too deep" à la compilation
         // (codegen legacy, sans viaIR).
         IMeridianNFT.TransactionData memory _data;
 
@@ -454,8 +439,6 @@ abstract contract InternalFunctions is Ownable {
         _data.advanceAmount = _transaction.advanceAmount;
         _data.totalAmount = _transaction.totalAmount;
         _data.transactionCancellingDate = _transaction.transactionCancellingDate;
-        _data.sellerDepartureDate = _transaction.sellerDepartureDate;
-        _data.sellerArrivalDate = _transaction.sellerArrivalDate;
         _data.containerReference = _transaction.containerReference;
 
         //IMeridianNFT(meridianNFTAddress).mintTransactionPair(_data);_mintOne

@@ -37,8 +37,6 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
         uint128 advanceAmount;
         uint128 totalAmount;
         uint40 transactionCancellingDate;
-        uint40 sellerDepartureDate;
-        uint40 sellerArrivalDate;
         string containerReference;
     }
 
@@ -47,7 +45,7 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
         Seller
     }
 
-    // internal (pas public) : avec 14 champs dont 5 string, le getter
+    // internal (pas public) : avec 12 champs dont 2 string, le getter
     // auto-généré par `public` fait "stack too deep" à la compilation
     // (codegen legacy, sans viaIR). getTransactionData ci-dessous retourne
     // le struct entier en un bloc memory, ce qui évite le problème (même
@@ -99,9 +97,7 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
         json = abi.encodePacked(json, _attribute("Advance Payment Mode", _advancePaymentModeLabel(_data.advancePaymentMode), true));
         json = abi.encodePacked(json, _attribute("Advance Amount", Strings.toString(_data.advanceAmount), false));
         json = abi.encodePacked(json, _attribute("Total Amount", Strings.toString(_data.totalAmount), false));
-        json = abi.encodePacked(json, _attribute("Cancelling Date", Strings.toString(_data.transactionCancellingDate), false));
-        json = abi.encodePacked(json, _attribute("Seller Departure Date", Strings.toString(_data.sellerDepartureDate), false));
-        json = abi.encodePacked(json, _attribute("Seller Arrival Date", Strings.toString(_data.sellerArrivalDate), false));
+        json = abi.encodePacked(json, _attribute("Expiration Date", Strings.toString(_data.transactionCancellingDate), false));
         json = abi.encodePacked(json, _lastAttribute("Container Reference", _data.containerReference, true));
         json = abi.encodePacked(json, "]}");
 

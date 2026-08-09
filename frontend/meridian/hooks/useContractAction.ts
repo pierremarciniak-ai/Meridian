@@ -76,6 +76,30 @@ function extractErrorMessage(err: unknown, abi?: Abi): string {
   return raw.split("\n")[0];
 }
 
+// Un receipt miné avec status "reverted" (ex. l'échéance a expiré entre la
+// simulation et l'inclusion du bloc, ou un état a changé entre-temps) rejoue
+// le même appel en lecture seule au bloc de la transaction pour en extraire
+// la vraie raison de revert, plutôt que d'afficher un message générique.
+async function fetchRevertReason(
+  publicClient: NonNullable<ReturnType<typeof usePublicClient>>,
+  hash: `0x${string}`,
+  abi?: Abi
+): Promise<string> {
+  try {
+    const tx = await publicClient.getTransaction({ hash });
+    await publicClient.call({
+      account: tx.from,
+      to: tx.to ?? undefined,
+      data: tx.input,
+      value: tx.value,
+      blockNumber: tx.blockNumber ?? undefined,
+    });
+    return "La transaction a été minée mais a échoué (revert) sans raison identifiable.";
+  } catch (err) {
+    return extractErrorMessage(err, abi);
+  }
+}
+
 // Enrobe useWriteContract + useWaitForTransactionReceipt : une seule fonction
 // `execute` à appeler depuis un bouton, un état de cycle de vie unique
 // (signing -> confirming -> success/error) et un message d'erreur lisible
@@ -141,13 +165,32 @@ export function useContractAction() {
     // système externe, pas une valeur dérivable au rendu — c'est exactement
     // le second cas d'usage légitime d'un effet (s'abonner à un système
     // externe et appeler setState quand il change).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (receipt.isSuccess) setStage("success");
-    else if (receipt.isError) {
+    if (receipt.isSuccess) {
+      // isSuccess ne veut dire que "on a bien récupéré un receipt", pas "la
+      // transaction a réussi" : une transaction minée peut très bien avoir
+      // status "reverted" (ex. une condition qui tenait encore au moment de
+      // la simulation ne tient plus au moment de l'inclusion du bloc — une
+      // échéance qui vient d'expirer pendant que l'utilisateur signait dans
+      // son wallet, un état modifié entre-temps par une autre transaction…).
+      // Sans cette vérification, ce cas se traduisait par un stage "success"
+      // silencieux : aucun event émis à trouver, donc aucune mise à jour de
+      // l'UI ni du dossier, sans le moindre message d'erreur.
+      if (receipt.data?.status === "reverted") {
+        setStage("error");
+        if (publicClient && hash) {
+          fetchRevertReason(publicClient, hash, lastAbiRef.current).then(setError);
+        } else {
+          setError("La transaction a été minée mais a échoué (revert).");
+        }
+      } else {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setStage("success");
+      }
+    } else if (receipt.isError) {
       setStage("error");
       setError(extractErrorMessage(receipt.error, lastAbiRef.current));
     }
-  }, [receipt.isSuccess, receipt.isError, receipt.error]);
+  }, [receipt.isSuccess, receipt.isError, receipt.error, receipt.data, publicClient, hash]);
 
   const reset = useCallback(() => {
     setHash(undefined);

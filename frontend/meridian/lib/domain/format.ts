@@ -9,10 +9,20 @@ export function formatAmount(value: bigint, decimals: number): string {
   return trimmedFraction ? `${groupedWhole},${trimmedFraction}` : groupedWhole;
 }
 
+// Appelée à chaque frappe (calculs dérivés affichés en direct dans les
+// formulaires) : une saisie transitoirement invalide ("q", "1.2.3", "-",
+// virgule seule…) est un état normal pendant que l'utilisateur tape, pas une
+// erreur — parseUnits lève pourtant une exception dans ce cas, ce qui
+// plantait le rendu. On traite toute saisie non interprétable comme "0" au
+// lieu de laisser l'exception remonter.
 export function parseAmountInput(value: string, decimals: number): bigint {
   const normalized = value.trim().replace(",", ".");
   if (!normalized) return 0n;
-  return parseUnits(normalized, decimals);
+  try {
+    return parseUnits(normalized, decimals);
+  } catch {
+    return 0n;
+  }
 }
 
 export function formatUnixDate(seconds: bigint | number): string {

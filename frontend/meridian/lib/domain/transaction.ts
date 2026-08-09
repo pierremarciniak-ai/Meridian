@@ -45,8 +45,6 @@ export type OnChainTransaction = {
   // c'est ce qui causait "Cannot mix BigInt and other types" dans
   // TimeTravelPanel avant ce correctif.
   transactionCancellingDate: number;
-  sellerDepartureDate: number;
-  sellerArrivalDate: number;
   advanceAmount: bigint;
   totalAmount: bigint;
   depositedAmount: bigint;

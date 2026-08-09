@@ -143,7 +143,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit TransactionCreated(_transactionID, msg.sender);
     }
 
-    function saveTransactionDetailsSeller(bytes32 _transactionID, SellerLogisticsInput calldata _logistics,
+    function saveTransactionDetailsSeller(bytes32 _transactionID, string calldata _containerReference,
     TransactionDetailsInput calldata _details) external onlySeller(_transactionID) onlyCreatedTransaction(_transactionID) {
 
         Transaction storage _transaction = TransactionsList[_transactionID];
@@ -155,12 +155,9 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
 
             emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
         } else {
-            require(_logistics.arrivalDate > _logistics.departureDate, "Arrival date must be after departure date");
-            require(bytes(_logistics.containerReference).length > 0, "Container reference cannot be empty");
+            require(bytes(_containerReference).length > 0, "Container reference cannot be empty");
 
-            _transaction.sellerDepartureDate = _logistics.departureDate.toUint40();
-            _transaction.sellerArrivalDate = _logistics.arrivalDate.toUint40();
-            _transaction.containerReference = _logistics.containerReference;
+            _transaction.containerReference = _containerReference;
 
             saveCommonTransactionDetails(_transactionID, _details);
 

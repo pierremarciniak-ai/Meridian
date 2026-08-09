@@ -67,12 +67,7 @@ describe("MeridianNFT", function () {
 
     await meridian.connect(seller).createTransaction(transactionID, billNumber);
 
-    const logistics = {
-      departureDate: await futureDate(ethers, 5),
-      arrivalDate: await futureDate(ethers, 20),
-      containerReference: "CONT-NFT-001",
-    };
-    await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+    await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "CONT-NFT-001", details);
 
     await meridian.connect(seller).signTransactionSeller(transactionID);
     await meridian.connect(buyer).signTransactionBuyer(transactionID);
@@ -150,8 +145,6 @@ describe("MeridianNFT", function () {
       advanceAmount: 0,
       totalAmount: 100,
       transactionCancellingDate: 0,
-      sellerDepartureDate: 0,
-      sellerArrivalDate: 0,
       containerReference: "REF",
     };
 
@@ -179,8 +172,6 @@ describe("MeridianNFT", function () {
       advanceAmount: 0,
       totalAmount: 100,
       transactionCancellingDate: 0,
-      sellerDepartureDate: 0,
-      sellerArrivalDate: 0,
       containerReference: "REF",
     };
 

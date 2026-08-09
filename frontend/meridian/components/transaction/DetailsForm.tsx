@@ -40,8 +40,6 @@ export function DetailsForm({
   const [totalAmountInput, setTotalAmountInput] = useState("");
   const [advanceAmountInput, setAdvanceAmountInput] = useState("");
   const [cancellingDate, setCancellingDate] = useState(unixToDateInput(tx.transactionCancellingDate));
-  const [departureDate, setDepartureDate] = useState(unixToDateInput(tx.sellerDepartureDate));
-  const [arrivalDate, setArrivalDate] = useState(unixToDateInput(tx.sellerArrivalDate));
   const [containerReference, setContainerReference] = useState(tx.containerReference);
   const [shortDeadline] = useShortDeadlineMode();
 
@@ -65,8 +63,6 @@ export function DetailsForm({
     // ci-dessus, pas une valeur dérivable au rendu.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setCancellingDate(shortDeadline ? unixToDateTimeInput(tx.transactionCancellingDate) : unixToDateInput(tx.transactionCancellingDate));
-    setDepartureDate(shortDeadline ? unixToDateTimeInput(tx.sellerDepartureDate) : unixToDateInput(tx.sellerDepartureDate));
-    setArrivalDate(shortDeadline ? unixToDateTimeInput(tx.sellerArrivalDate) : unixToDateInput(tx.sellerArrivalDate));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shortDeadline]);
 
@@ -100,15 +96,7 @@ export function DetailsForm({
         address: meridianAddress,
         abi: meridianAbi,
         functionName: "saveTransactionDetailsSeller",
-        args: [
-          transactionId,
-          {
-            departureDate: shortDeadline ? dateTimeInputToUnix(departureDate) : dateInputToUnix(departureDate),
-            arrivalDate: shortDeadline ? dateTimeInputToUnix(arrivalDate) : dateInputToUnix(arrivalDate),
-            containerReference,
-          },
-          details,
-        ],
+        args: [transactionId, containerReference, details],
       });
     } else {
       await execute({
@@ -128,34 +116,14 @@ export function DetailsForm({
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {role === "seller" && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="Date de départ" hint={shortDeadline ? "Mode échéance courte activé (voir Outils de test)." : undefined}>
-              <input
-                className="field-input"
-                type={shortDeadline ? "datetime-local" : "date"}
-                value={departureDate}
-                onChange={(e) => setDepartureDate(e.target.value)}
-                required
-              />
-            </Field>
-            <Field label="Date d'arrivée" hint={shortDeadline ? "Mode échéance courte activé (voir Outils de test)." : undefined}>
-              <input
-                className="field-input"
-                type={shortDeadline ? "datetime-local" : "date"}
-                value={arrivalDate}
-                onChange={(e) => setArrivalDate(e.target.value)}
-                required
-              />
-            </Field>
-            <Field label="Référence conteneur">
-              <input
-                className="field-input font-mono-tight"
-                value={containerReference}
-                onChange={(e) => setContainerReference(e.target.value)}
-                required
-              />
-            </Field>
-          </div>
+          <Field label="Référence conteneur">
+            <input
+              className="field-input font-mono-tight"
+              value={containerReference}
+              onChange={(e) => setContainerReference(e.target.value)}
+              required
+            />
+          </Field>
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

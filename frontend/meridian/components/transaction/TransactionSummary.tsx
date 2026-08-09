@@ -93,8 +93,6 @@ export function TransactionSummary({
 
         <h3 className="label-caps mb-1 mt-6">Logistique</h3>
         <div className="divide-y" style={{ borderColor: "var(--color-navy-700)" }}>
-          <Row label="Départ">{formatUnixDate(tx.sellerDepartureDate)}</Row>
-          <Row label="Arrivée">{formatUnixDate(tx.sellerArrivalDate)}</Row>
           <Row label="Conteneur">{tx.containerReference ? <span className="font-mono-tight">{tx.containerReference}</span> : "—"}</Row>
           <Row label="Position du conteneur">{containerPositionStatusLabels[tx.containerPositionStatus]}</Row>
         </div>

@@ -154,24 +154,18 @@ describe("Meridian", function () {
   async function createAndSignTransaction(
     ctx: Awaited<ReturnType<typeof deployFixture>>,
     detailsOverrides: Partial<any> = {},
-    logisticsOverrides: Partial<any> = {},
+    containerReference = "CONT-REF-001",
     billNumber = "BILL-SIGNED"
   ) {
-    const { ethers, meridian, buyer, seller } = ctx;
+    const { meridian, buyer, seller } = ctx;
     const { transactionID, details } = await initAndCreate(ctx, billNumber, detailsOverrides, "1000");
 
-    const logistics = {
-      departureDate: await futureDate(ethers, 5),
-      arrivalDate: await futureDate(ethers, 20),
-      containerReference: "CONT-REF-001",
-      ...logisticsOverrides,
-    };
-    await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+    await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, containerReference, details);
 
     await meridian.connect(seller).signTransactionSeller(transactionID);
     await meridian.connect(buyer).signTransactionBuyer(transactionID);
 
-    return { transactionID, details, logistics, totalAmount: details.totalAmount, billNumber };
+    return { transactionID, details, containerReference, totalAmount: details.totalAmount, billNumber };
   }
 
   // Simule le cron backend qui interroge VesselFinder et fait remonter la
@@ -441,7 +435,7 @@ describe("Meridian", function () {
     it("permet à l'oracle de reporter la position du conteneur", async function () {
       const ctx = await deployFixture();
       const { meridian, containerPositionOracle } = ctx;
-      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-POS-1");
+      const { transactionID } = await createAndSignTransaction(ctx, {}, "CONT-REF-001", "BILL-POS-1");
 
       await expect(
         meridian
@@ -458,7 +452,7 @@ describe("Meridian", function () {
     it("refuse un appel par quelqu'un d'autre que l'oracle configuré (ex. le vendeur lui-même)", async function () {
       const ctx = await deployFixture();
       const { meridian, seller } = ctx;
-      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-POS-2");
+      const { transactionID } = await createAndSignTransaction(ctx, {}, "CONT-REF-001", "BILL-POS-2");
 
       await expect(
         meridian.connect(seller).reportContainerPosition(transactionID, ContainerPositionStatus.AtDestination)
@@ -745,69 +739,36 @@ describe("Meridian", function () {
   // saveTransactionDetailsSeller / saveTransactionDetailsBuyer
   // =========================================================================
   describe("saveTransactionDetailsSeller / saveTransactionDetailsBuyer", function () {
-    it("permet au vendeur de renseigner les infos logistiques", async function () {
+    it("permet au vendeur de renseigner la référence du conteneur", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, seller } = ctx;
+      const { meridian, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "MEDU1234567",
-      };
-
-      await expect(meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details))
+      await expect(meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "MEDU1234567", details))
         .to.emit(meridian, "TransactionDetailsSaved")
         .withArgs(transactionID, UserType.Seller, seller.address);
 
       const stored = await meridian.getTransaction(transactionID);
-      expect(stored.sellerDepartureDate).to.equal(logistics.departureDate);
-      expect(stored.sellerArrivalDate).to.equal(logistics.arrivalDate);
-      expect(stored.containerReference).to.equal(logistics.containerReference);
-    });
-
-    it("refuse une arrivalDate antérieure ou égale à departureDate", async function () {
-      const ctx = await deployFixture();
-      const { ethers, meridian, seller } = ctx;
-      const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-2");
-
-      const sameDate = await futureDate(ethers, 5);
-      const logistics = { departureDate: sameDate, arrivalDate: sameDate, containerReference: "REF" };
-
-      await expect(
-        meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details)
-      ).to.be.revertedWith("Arrival date must be after departure date");
+      expect(stored.containerReference).to.equal("MEDU1234567");
     });
 
     it("refuse une containerReference vide", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, seller } = ctx;
+      const { meridian, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-3");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "",
-      };
-
       await expect(
-        meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details)
+        meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "", details)
       ).to.be.revertedWith("Container reference cannot be empty");
     });
 
     it("refuse l'appel par quelqu'un d'autre que le vendeur déclaré", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, other } = ctx;
+      const { meridian, other } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-4");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF",
-      };
-
       await expect(
-        meridian.connect(other).saveTransactionDetailsSeller(transactionID, logistics, details)
+        meridian.connect(other).saveTransactionDetailsSeller(transactionID, "REF", details)
       ).to.be.revertedWith("You're not the declared seller");
     });
 
@@ -816,12 +777,7 @@ describe("Meridian", function () {
       const { ethers, meridian, buyer, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-5");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF-STD-5",
-      };
-      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-STD-5", details);
 
       const newDetails = { ...details, totalAmount: ethers.parseUnits("350", 6) };
 
@@ -835,15 +791,10 @@ describe("Meridian", function () {
 
     it("réinitialise les signatures après une mise à jour des détails", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, buyer, seller } = ctx;
+      const { meridian, buyer, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-6");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF-STD-6",
-      };
-      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-STD-6", details);
 
       await meridian.connect(seller).signTransactionSeller(transactionID);
       expect((await meridian.getTransaction(transactionID)).signedBySeller).to.equal(true);
@@ -863,14 +814,14 @@ describe("Meridian", function () {
       ).to.be.revertedWith("You're not the declared buyer");
     });
 
-    it("refuse la mise à jour acheteur tant que le vendeur n'a pas renseigné la logistique", async function () {
+    it("refuse la mise à jour acheteur tant que le vendeur n'a pas renseigné la référence du conteneur", async function () {
       const ctx = await deployFixture();
       const { meridian, buyer } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-8");
 
       await expect(
         meridian.connect(buyer).saveTransactionDetailsBuyer(transactionID, details)
-      ).to.be.revertedWith("Departure date not set");
+      ).to.be.revertedWith("Container reference cannot be empty");
     });
 
     // saveCommonTransactionDetails (appelée par saveTransactionDetailsSeller
@@ -879,18 +830,13 @@ describe("Meridian", function () {
     // aussi évite qu'une régression sur cette copie passe inaperçue.
     it("refuse un totalAmount à zéro (via saveTransactionDetailsSeller)", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, seller } = ctx;
+      const { meridian, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-9");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF-STD-9",
-      };
       const badDetails = { ...details, totalAmount: 0 };
 
       await expect(
-        meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, badDetails)
+        meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-STD-9", badDetails)
       ).to.be.revertedWith("Total amount must be greater than zero");
     });
 
@@ -899,12 +845,7 @@ describe("Meridian", function () {
       const { ethers, meridian, buyer, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-10");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF-STD-10",
-      };
-      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-STD-10", details);
 
       const pastDate = (await futureDate(ethers, 0)) - 1000;
       const badDetails = { ...details, transactionCancellingDate: pastDate };
@@ -916,18 +857,12 @@ describe("Meridian", function () {
 
     it("abandonne la transaction (sans revert, sans sauvegarde) si le vendeur est sanctionné", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, mockSanctionsOracle, buyer, seller } = ctx;
+      const { meridian, mockSanctionsOracle, buyer, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-SANCTION-SELLER");
 
       await mockSanctionsOracle.setSanctioned(seller.address);
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF-SANCTION-SELLER",
-      };
-
-      await expect(meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details))
+      await expect(meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-SANCTION-SELLER", details))
         .to.emit(meridian, "TransactionAborted")
         .withArgs(transactionID, buyer.address, seller.address);
 
@@ -937,7 +872,6 @@ describe("Meridian", function () {
       expect(stored.buyerSanctioned).to.equal(false);
       // L'abandon court-circuite la sauvegarde : rien n'a été enregistré.
       expect(stored.containerReference).to.equal("");
-      expect(stored.sellerDepartureDate).to.equal(0);
     });
 
     it("abandonne la transaction (sans revert, sans sauvegarde) si l'acheteur est sanctionné", async function () {
@@ -945,12 +879,7 @@ describe("Meridian", function () {
       const { ethers, meridian, mockSanctionsOracle, buyer, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-SANCTION-BUYER");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF-SANCTION-BUYER",
-      };
-      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-SANCTION-BUYER", details);
 
       await mockSanctionsOracle.setSanctioned(buyer.address);
 
@@ -975,15 +904,10 @@ describe("Meridian", function () {
   describe("signTransactionSeller / signTransactionBuyer", function () {
     it("passe en TransactionSigned quand les deux parties ont signé", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, buyer, seller } = ctx;
+      const { meridian, buyer, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-SIGN");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF-SIGN",
-      };
-      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-SIGN", details);
 
       await expect(meridian.connect(seller).signTransactionSeller(transactionID))
         .to.emit(meridian, "TransactionPartiallySigned")
@@ -1018,37 +942,32 @@ describe("Meridian", function () {
       );
     });
 
-    it("refuse la signature vendeur tant que la logistique n'est pas renseignée", async function () {
+    it("refuse la signature vendeur tant que la référence du conteneur n'est pas renseignée", async function () {
       const ctx = await deployFixture();
       const { meridian, seller } = ctx;
       const { transactionID } = await initAndCreate(ctx, "BILL-SIGN-4");
 
       await expect(meridian.connect(seller).signTransactionSeller(transactionID)).to.be.revertedWith(
-        "Departure date not set"
+        "Container reference cannot be empty"
       );
     });
 
-    it("refuse la signature acheteur tant que la logistique n'est pas renseignée", async function () {
+    it("refuse la signature acheteur tant que la référence du conteneur n'est pas renseignée", async function () {
       const ctx = await deployFixture();
       const { meridian, buyer } = ctx;
       const { transactionID } = await initAndCreate(ctx, "BILL-SIGN-5");
 
       await expect(meridian.connect(buyer).signTransactionBuyer(transactionID)).to.be.revertedWith(
-        "Departure date not set"
+        "Container reference cannot be empty"
       );
     });
 
     it("abandonne la transaction (sans revert) si le signataire est sanctionné", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, mockSanctionsOracle, seller } = ctx;
+      const { meridian, mockSanctionsOracle, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-SIGN-ABORT");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF-SIGN-ABORT",
-      };
-      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-SIGN-ABORT", details);
 
       await mockSanctionsOracle.setSanctioned(seller.address);
 
@@ -1066,15 +985,10 @@ describe("Meridian", function () {
 
     it("distingue un abandon pour cause de sanction acheteur (buyerSanctioned) de celui du vendeur", async function () {
       const ctx = await deployFixture();
-      const { ethers, meridian, mockSanctionsOracle, buyer, seller } = ctx;
+      const { meridian, mockSanctionsOracle, buyer, seller } = ctx;
       const { transactionID, details } = await initAndCreate(ctx, "BILL-SIGN-ABORT-BUYER");
 
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF-SIGN-ABORT-BUYER",
-      };
-      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+      await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-SIGN-ABORT-BUYER", details);
 
       await mockSanctionsOracle.setSanctioned(buyer.address);
 
@@ -1094,7 +1008,7 @@ describe("Meridian", function () {
     it("permet à l'acheteur de minter son NFT récapitulatif", async function () {
       const ctx = await deployFixture();
       const { meridian, meridianNFT, buyer } = ctx;
-      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-NFT-BUYER");
+      const { transactionID } = await createAndSignTransaction(ctx, {}, "CONT-REF-001", "BILL-NFT-BUYER");
 
       const tx = await meridian.connect(buyer).mintTransactionNFTBuyer(transactionID);
       const receipt = await tx.wait();
@@ -1119,7 +1033,7 @@ describe("Meridian", function () {
     it("permet au vendeur de minter son NFT récapitulatif, indépendamment de l'acheteur", async function () {
       const ctx = await deployFixture();
       const { meridian, meridianNFT, seller } = ctx;
-      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-NFT-SELLER");
+      const { transactionID } = await createAndSignTransaction(ctx, {}, "CONT-REF-001", "BILL-NFT-SELLER");
 
       // Le vendeur mint sans que l'acheteur n'ait rien fait de son côté : les
       // deux flags (buyerNFTMinted/sellerNFTMinted) sont indépendants.
@@ -1159,12 +1073,7 @@ describe("Meridian", function () {
       const tx = await freshMeridian.connect(buyer).initializeTransaction(details, "BILL-NFT-NOCONFIG");
       const transactionID = await extractTransactionID(freshMeridian, tx);
       await freshMeridian.connect(seller).createTransaction(transactionID, "BILL-NFT-NOCONFIG");
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF",
-      };
-      await freshMeridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+      await freshMeridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF", details);
       await freshMeridian.connect(seller).signTransactionSeller(transactionID);
       await freshMeridian.connect(buyer).signTransactionBuyer(transactionID);
 
@@ -1189,7 +1098,7 @@ describe("Meridian", function () {
     it("refuse un second mint buyer une fois déjà minté", async function () {
       const ctx = await deployFixture();
       const { meridian, buyer } = ctx;
-      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-NFT-BUYER-TWICE");
+      const { transactionID } = await createAndSignTransaction(ctx, {}, "CONT-REF-001", "BILL-NFT-BUYER-TWICE");
 
       await meridian.connect(buyer).mintTransactionNFTBuyer(transactionID);
 
@@ -1201,7 +1110,7 @@ describe("Meridian", function () {
     it("refuse un second mint seller une fois déjà minté", async function () {
       const ctx = await deployFixture();
       const { meridian, seller } = ctx;
-      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-NFT-SELLER-TWICE");
+      const { transactionID } = await createAndSignTransaction(ctx, {}, "CONT-REF-001", "BILL-NFT-SELLER-TWICE");
 
       await meridian.connect(seller).mintTransactionNFTSeller(transactionID);
 
@@ -1213,7 +1122,7 @@ describe("Meridian", function () {
     it("refuse l'appel au mint buyer par quelqu'un d'autre que l'acheteur déclaré", async function () {
       const ctx = await deployFixture();
       const { meridian, other } = ctx;
-      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-NFT-BUYER-OTHER");
+      const { transactionID } = await createAndSignTransaction(ctx, {}, "CONT-REF-001", "BILL-NFT-BUYER-OTHER");
 
       await expect(meridian.connect(other).mintTransactionNFTBuyer(transactionID)).to.be.revertedWith(
         "You're not the declared buyer"
@@ -1223,7 +1132,7 @@ describe("Meridian", function () {
     it("refuse l'appel au mint seller par quelqu'un d'autre que le vendeur déclaré", async function () {
       const ctx = await deployFixture();
       const { meridian, other } = ctx;
-      const { transactionID } = await createAndSignTransaction(ctx, {}, {}, "BILL-NFT-SELLER-OTHER");
+      const { transactionID } = await createAndSignTransaction(ctx, {}, "CONT-REF-001", "BILL-NFT-SELLER-OTHER");
 
       await expect(meridian.connect(other).mintTransactionNFTSeller(transactionID)).to.be.revertedWith(
         "You're not the declared seller"
@@ -1387,12 +1296,7 @@ describe("Meridian", function () {
       const transactionID = await extractTransactionID(freshMeridian, tx);
 
       await freshMeridian.connect(seller).createTransaction(transactionID, "BILL-NOTOKEN");
-      const logistics = {
-        departureDate: await futureDate(ethers, 5),
-        arrivalDate: await futureDate(ethers, 15),
-        containerReference: "REF",
-      };
-      await freshMeridian.connect(seller).saveTransactionDetailsSeller(transactionID, logistics, details);
+      await freshMeridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF", details);
       await freshMeridian.connect(seller).signTransactionSeller(transactionID);
       await freshMeridian.connect(buyer).signTransactionBuyer(transactionID);
 
@@ -1774,7 +1678,7 @@ describe("Meridian", function () {
         const { transactionID, totalAmount } = await createAndSignTransaction(
           ctx,
           { transactionModel, advancePaymentMode, advanceAmount },
-          {},
+          "CONT-REF-001",
           `BILL-MODEL-${slug}`
         );
 
@@ -1809,7 +1713,7 @@ describe("Meridian", function () {
       const { transactionID, totalAmount } = await createAndSignTransaction(
         ctx,
         { transactionModel: TransactionModel.FullLocked },
-        {},
+        "CONT-REF-001",
         billNumber
       );
 
@@ -1828,7 +1732,7 @@ describe("Meridian", function () {
       const { transactionID, totalAmount } = await createAndSignTransaction(
         ctx,
         { transactionModel: TransactionModel.FullLocked },
-        {},
+        "CONT-REF-001",
         "BILL-NOT-OVERDUE"
       );
 
@@ -1867,7 +1771,7 @@ describe("Meridian", function () {
       const { transactionID } = await createAndSignTransaction(
         ctx,
         { transactionModel: TransactionModel.PartialLocked, advanceAmount: totalAmount },
-        {},
+        "CONT-REF-001",
         "BILL-PARTIAL-REFUND"
       );
 

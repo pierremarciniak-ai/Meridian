@@ -789,16 +789,6 @@ export const meridianAbi = [
             "type": "uint40"
           },
           {
-            "internalType": "uint40",
-            "name": "sellerDepartureDate",
-            "type": "uint40"
-          },
-          {
-            "internalType": "uint40",
-            "name": "sellerArrivalDate",
-            "type": "uint40"
-          },
-          {
             "internalType": "uint128",
             "name": "advanceAmount",
             "type": "uint128"
@@ -1134,26 +1124,9 @@ export const meridianAbi = [
         "type": "bytes32"
       },
       {
-        "components": [
-          {
-            "internalType": "uint256",
-            "name": "departureDate",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "arrivalDate",
-            "type": "uint256"
-          },
-          {
-            "internalType": "string",
-            "name": "containerReference",
-            "type": "string"
-          }
-        ],
-        "internalType": "struct InternalFunctions.SellerLogisticsInput",
-        "name": "_logistics",
-        "type": "tuple"
+        "internalType": "string",
+        "name": "_containerReference",
+        "type": "string"
       },
       {
         "components": [
