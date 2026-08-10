@@ -695,6 +695,11 @@ export const meridianAbi = [
             "type": "uint8"
           },
           {
+            "internalType": "enum InternalFunctions.UserType",
+            "name": "currentEditor",
+            "type": "uint8"
+          },
+          {
             "internalType": "bool",
             "name": "signedByBuyer",
             "type": "bool"
@@ -1355,5 +1360,31 @@ export const meridianAbi = [
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "transactionID",
+        "type": "bytes32"
+      }
+    ],
+    "name": "BuyerIsNowEditor",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "transactionID",
+        "type": "bytes32"
+      }
+    ],
+    "name": "SellerIsNowEditor",
+    "type": "event"
   }
 ] as const;

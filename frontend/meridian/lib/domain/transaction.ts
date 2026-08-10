@@ -23,6 +23,11 @@ export type OnChainTransaction = {
   transactionModel: TransactionModel;
   advancePaymentMode: AdvancePaymentMode;
   containerPositionStatus: ContainerPositionStatus;
+  // Seule cette partie (buyer ou seller) peut actuellement modifier les
+  // détails ou signer — voir signTransaction/saveTransactionDetails* dans
+  // InternalFunctions.sol/Meridian.sol. Ne change qu'à la signature, jamais
+  // à une simple sauvegarde de détails.
+  currentEditor: UserType;
   signedByBuyer: boolean;
   signedBySeller: boolean;
   depositCompleted: boolean;
@@ -66,6 +71,15 @@ export function transactionExists(tx: Pick<OnChainTransaction, "workflowStatus">
 
 export function hasSeller(tx: Pick<OnChainTransaction, "seller">): boolean {
   return !sameAddress(tx.seller.userAddress, ZERO_ADDRESS);
+}
+
+// Miroir client de la garde currentEditor dans signTransaction /
+// saveTransactionDetailsSeller / saveTransactionDetailsBuyer : permet de
+// désactiver l'édition/la signature côté UI plutôt que de laisser
+// l'utilisateur remplir un formulaire pour se prendre un revert.
+export function isCurrentEditor(tx: Pick<OnChainTransaction, "currentEditor">, role: "buyer" | "seller" | null): boolean {
+  if (!role) return false;
+  return (role === "buyer" && tx.currentEditor === UserType.Buyer) || (role === "seller" && tx.currentEditor === UserType.Seller);
 }
 
 // Miroir client (estimation d'affichage uniquement) de calculateAdvanceAmount
@@ -113,10 +127,11 @@ export function isContainerPositionSufficientForWithdrawal(tx: OnChainTransactio
   return tx.containerPositionStatus === ContainerPositionStatus.AtDestination;
 }
 
-// rollbackDeposit remet depositedAmount à 0 après le premier appel réussi :
-// sa disponibilité se résume donc à "il reste quelque chose à récupérer".
+// rollbackDeposit rembourse pendingWithdrawalAmount (pas depositedAmount,
+// qui inclut aussi ce que le fournisseur a déjà retiré) et le remet à 0 :
+// sa disponibilité se résume donc à "il reste un montant non retiré".
 export function canRollbackDeposit(tx: OnChainTransaction): boolean {
-  return tx.depositedAmount > 0n;
+  return tx.pendingWithdrawalAmount > 0n;
 }
 
 // Miroir client de checkAbortedStatus : le contrat ne fait cette transition

@@ -15,7 +15,7 @@ import {
 } from "@/lib/domain/enums";
 import { formatAmount, formatUnixDate } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
-import { sameAddress } from "@/lib/domain/transaction";
+import { isCurrentEditor, sameAddress } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { meridianAddress } from "@/lib/web3/contracts";
@@ -72,6 +72,7 @@ export function TransactionSummary({
 
   const canSign = tx.workflowStatus === WorkflowStatus.Created;
   const alreadySigned = role === "buyer" ? tx.signedByBuyer : role === "seller" ? tx.signedBySeller : false;
+  const myTurn = isCurrentEditor(tx, role);
 
   async function handleSign() {
     await execute({
@@ -137,7 +138,13 @@ export function TransactionSummary({
 
         {canSign && (
           <div className="mt-4">
-            {role ? (
+            {!role ? (
+              <p className="text-sm text-subtle">Seuls l&apos;acheteur et le fournisseur déclarés peuvent signer ce dossier.</p>
+            ) : !myTurn ? (
+              <p className="text-sm text-subtle">
+                En attente de la signature {role === "buyer" ? "du fournisseur" : "de l'acheteur"}
+              </p>
+            ) : (
               <>
                 <TxStatusLine stage={stage} error={error} />
                 <Button
@@ -149,8 +156,6 @@ export function TransactionSummary({
                   {alreadySigned ? "Signé" : `Signer en tant que ${role === "buyer" ? "acheteur" : "fournisseur"}`}
                 </Button>
               </>
-            ) : (
-              <p className="text-sm text-subtle">Seuls l&apos;acheteur et le fournisseur déclarés peuvent signer ce dossier.</p>
             )}
           </div>
         )}

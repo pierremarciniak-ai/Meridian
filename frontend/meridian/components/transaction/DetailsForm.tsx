@@ -15,7 +15,7 @@ import {
 } from "@/lib/domain/enums";
 import { dateInputToUnix, dateTimeInputToUnix, formatAmount, parseAmountInput, unixToDateInput, unixToDateTimeInput } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
-import { estimateAdvanceAmount } from "@/lib/domain/transaction";
+import { estimateAdvanceAmount, isCurrentEditor } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
@@ -78,9 +78,11 @@ export function DetailsForm({
   // lui transmet le montant total (et non le montant déjà calculé) pour que
   // l'acompte stocké corresponde exactement à ce qui est affiché.
   const autoAdvanceAmount = estimateAdvanceAmount(model, totalAmountParsed);
+  const myTurn = isCurrentEditor(tx, role);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!myTurn) return;
     const details = {
       currency,
       transactionCondition: condition,
@@ -115,6 +117,13 @@ export function DetailsForm({
       </CardHeader>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {!myTurn && (
+          <p className="text-sm text-subtle">
+            En attente de la validation {role === "buyer" ? "du fournisseur" : "de l'acheteur"}
+          </p>
+        )}
+
+        <fieldset disabled={!myTurn} className="contents">
         {role === "seller" && (
           <Field label="Référence conteneur">
             <input
@@ -198,6 +207,7 @@ export function DetailsForm({
         <Button type="submit" variant="secondary" loading={stage === "signing" || stage === "confirming"}>
           Enregistrer
         </Button>
+        </fieldset>
       </form>
     </Card>
   );

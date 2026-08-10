@@ -118,6 +118,7 @@ abstract contract InternalFunctions is Ownable {
         TransactionModel transactionModel;
         AdvancePaymentMode advancePaymentMode;
         ContainerPositionStatus containerPositionStatus;
+        UserType currentEditor;
         bool signedByBuyer;
         bool signedBySeller;
         bool depositCompleted;
@@ -244,9 +245,15 @@ abstract contract InternalFunctions is Ownable {
     // se produire et persister. Le require qui suit ne peut alors revert que
     // dans les cas où abortIfOverdue n'a rien muté (date non dépassée et
     // statut pas déjà aborted), donc aucune écriture n'est jamais perdue.
-    modifier onlyAbortedTransaction(bytes32 _transactionID) {
-        checkAbortedStatus(_transactionID);
-        require(TransactionsList[_transactionID].workflowStatus == WorkflowStatus.TransactionAborted, "Transaction is not aborted");
+    // modifier onlyAbortedTransaction(bytes32 _transactionID) {
+    //     checkAbortedStatus(_transactionID);
+    //     require(TransactionsList[_transactionID].workflowStatus == WorkflowStatus.TransactionAborted, "Transaction is not aborted");
+    //     _;
+    // }
+
+    modifier checkRollbackEligibility(bytes32 _transactionID) {
+        require(TransactionsList[_transactionID].pendingWithdrawalAmount > 0, "No pending amount to rollback");
+        require(rollbackEligibilityStatus(_transactionID), "Transaction is not eligible for rollback");
         _;
     }
 
@@ -256,11 +263,11 @@ abstract contract InternalFunctions is Ownable {
     // si la date est dépassée, on met à jour le statut et on n'exécute pas le
     // `_;` (donc l'action demandée par l'appelant n'a pas lieu), mais la
     // transaction on-chain se termine normalement, avec l'écriture conservée.
-    modifier transactionDateNotOverdue(bytes32 _transactionID) {
-        if (!checkAbortedStatus(_transactionID)) {
-            _;
-        }
-    }
+    // modifier transactionDateNotOverdue(bytes32 _transactionID) {
+    //     if (!checkAbortedStatus(_transactionID)) {
+    //         _;
+    //     }
+    // }
 
     modifier onlyUnsanctioned(address _userAddress) {
         bool _sanctionned = checkSanction(_userAddress);
@@ -299,6 +306,8 @@ abstract contract InternalFunctions is Ownable {
     event TransactionNFTMinted(bytes32 indexed transactionID, UserType userType, address indexed userAddress, uint256 tokenId);
     event ContainerPositionOracleAddressUpdated(address indexed newOracle);
     event ContainerPositionReported(bytes32 indexed transactionID, ContainerPositionStatus status);
+    event BuyerIsNowEditor(bytes32 indexed transactionID);
+    event SellerIsNowEditor(bytes32 indexed transactionID);
 
     error AddressIsSanctioned(address accountAddress);
 
@@ -380,8 +389,10 @@ abstract contract InternalFunctions is Ownable {
         }
     }
 
-    function _signTransaction(bytes32 _transactionID, UserType _userType) internal {
+    function signTransaction(bytes32 _transactionID, UserType _userType) internal {
         Transaction storage _transaction = TransactionsList[_transactionID];
+
+        require(_userType == _transaction.currentEditor, "Only the current editor can sign the transaction");
 
         if (checkSanction(msg.sender)) {
             _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
@@ -395,8 +406,14 @@ abstract contract InternalFunctions is Ownable {
         } else {
             if (_userType == UserType.Seller) {
                 _transaction.signedBySeller = true;
+                _transaction.currentEditor = UserType.Buyer;
+
+                emit BuyerIsNowEditor(_transactionID);                
             } else {
                 _transaction.signedByBuyer = true;
+                _transaction.currentEditor = UserType.Seller;
+
+                emit SellerIsNowEditor(_transactionID);                  
             }
 
             emit TransactionPartiallySigned(_transactionID, _userType, msg.sender);
@@ -454,23 +471,40 @@ abstract contract InternalFunctions is Ownable {
     // stocké comme le 16/09 à 00:00:00 UTC). La comparaison >= évite le
     // nombre magique "23:59:59" côté front et reste lisible : la transaction
     // expire dès que block.timestamp atteint ou dépasse cette date pivot.
-    function checkAbortedStatus(bytes32 _transactionID) internal returns (bool) {
+    // function checkAbortedStatus(bytes32 _transactionID) internal returns (bool) {
+    //     Transaction storage _transaction = TransactionsList[_transactionID];
+
+    //     if (block.timestamp >= _transaction.transactionCancellingDate) {
+    //         if (_transaction.workflowStatus != WorkflowStatus.TransactionAborted) {
+    //             _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
+                
+    //             emit TransactionDateOverdue(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+    //             emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+    //         }
+    //         return true;
+    //     } else if (_transaction.workflowStatus == WorkflowStatus.TransactionAborted) {
+    //         return true;
+    //     } else {
+    //         return false;
+    //     }
+    // }    
+
+    function rollbackEligibilityStatus(bytes32 _transactionID) internal view returns (bool _status) {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
-        if (block.timestamp >= _transaction.transactionCancellingDate) {
-            if (_transaction.workflowStatus != WorkflowStatus.TransactionAborted) {
-                _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
-                
-                emit TransactionDateOverdue(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
-                emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+        if (_transaction.workflowStatus == WorkflowStatus.TransactionAborted) {
+            return true;
+        } else if (block.timestamp >= _transaction.transactionCancellingDate) {
+
+            if ((_transaction.transactionCondition == TransactionCondition.AtTheBeginningOfDelivery &&
+            _transaction.containerPositionStatus == ContainerPositionStatus.UnSet) ||
+            (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery &&
+            _transaction.containerPositionStatus != ContainerPositionStatus.AtDestination)) {
+                return true;
             }
-            return true;
-        } else if (_transaction.workflowStatus == WorkflowStatus.TransactionAborted) {
-            return true;
-        } else {
-            return false;
-        }
-    }    
+        } 
+        return false;
+    } 
 
     function checkSanction(address _userAddress) internal returns (bool) {
         if (checkSanctionsEnabled && !isExempt[_userAddress]) {

@@ -778,6 +778,10 @@ describe("Meridian", function () {
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-5");
 
       await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-STD-5", details);
+      // La main ne passe à l'acheteur (currentEditor) qu'une fois le vendeur
+      // signé : voir la même exigence dans le test "réinitialise les
+      // signatures..." juste après.
+      await meridian.connect(seller).signTransactionSeller(transactionID);
 
       const newDetails = { ...details, totalAmount: ethers.parseUnits("350", 6) };
 
@@ -846,6 +850,7 @@ describe("Meridian", function () {
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-10");
 
       await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-STD-10", details);
+      await meridian.connect(seller).signTransactionSeller(transactionID);
 
       const pastDate = (await futureDate(ethers, 0)) - 1000;
       const badDetails = { ...details, transactionCancellingDate: pastDate };
@@ -880,6 +885,7 @@ describe("Meridian", function () {
       const { transactionID, details } = await initAndCreate(ctx, "BILL-STD-SANCTION-BUYER");
 
       await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-SANCTION-BUYER", details);
+      await meridian.connect(seller).signTransactionSeller(transactionID);
 
       await mockSanctionsOracle.setSanctioned(buyer.address);
 
@@ -989,6 +995,7 @@ describe("Meridian", function () {
       const { transactionID, details } = await initAndCreate(ctx, "BILL-SIGN-ABORT-BUYER");
 
       await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF-SIGN-ABORT-BUYER", details);
+      await meridian.connect(seller).signTransactionSeller(transactionID);
 
       await mockSanctionsOracle.setSanctioned(buyer.address);
 
@@ -1305,7 +1312,11 @@ describe("Meridian", function () {
       );
     });
 
-    it("abandonne silencieusement (sans revert) si la date limite est dépassée", async function () {
+    // depositFunds n'a plus de vérification de date (transactionDateNotOverdue
+    // a été retiré) : l'échéance n'est désormais consultée qu'au moment d'un
+    // rollback (rollbackEligibilityStatus), pas pour bloquer un dépôt. Un
+    // dépôt après l'échéance doit donc simplement réussir normalement.
+    it("permet toujours de déposer après l'échéance (plus de vérification de date dans depositFunds)", async function () {
       const ctx = await deployFixture();
       const { ethers, meridian, usdc, buyer } = ctx;
 
@@ -1318,14 +1329,14 @@ describe("Meridian", function () {
 
       await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
 
-      await expect(meridian.connect(buyer).depositFunds(transactionID)).to.emit(
-        meridian,
-        "TransactionDateOverdue"
-      );
+      await expect(meridian.connect(buyer).depositFunds(transactionID))
+        .to.emit(meridian, "FundsDeposited")
+        .withArgs(transactionID, buyer.address, totalAmount, Currency.USDC);
 
       const after = await meridian.getTransaction(transactionID);
-      expect(after.workflowStatus).to.equal(WorkflowStatus.Aborted);
-      expect(after.depositedAmount).to.equal(0);
+      expect(after.workflowStatus).to.equal(WorkflowStatus.Signed);
+      expect(after.depositedAmount).to.equal(totalAmount);
+      expect(after.depositCompleted).to.equal(true);
     });
   });
 
@@ -1726,7 +1737,7 @@ describe("Meridian", function () {
       return { transactionID, totalAmount };
     }
 
-    it("refuse tant que la transaction n'est pas abandonnée", async function () {
+    it("refuse tant que la transaction n'est pas éligible au rollback (échéance non dépassée)", async function () {
       const ctx = await deployFixture();
       const { meridian, usdc, buyer } = ctx;
       const { transactionID, totalAmount } = await createAndSignTransaction(
@@ -1740,7 +1751,7 @@ describe("Meridian", function () {
       await meridian.connect(buyer).depositFunds(transactionID);
 
       await expect(meridian.connect(buyer).rollbackDeposit(transactionID)).to.be.revertedWith(
-        "Transaction is not aborted"
+        "Transaction is not eligible for rollback"
       );
     });
 
@@ -1760,8 +1771,12 @@ describe("Meridian", function () {
 
       const stored = await meridian.getTransaction(transactionID);
       expect(stored.depositedAmount).to.equal(0);
+      expect(stored.pendingWithdrawalAmount).to.equal(0);
       expect(stored.totalAmountRefunded).to.equal(true);
-      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      // rollbackDeposit ne modifie plus workflowStatus (l'éligibilité est
+      // recalculée à la volée par rollbackEligibilityStatus, plus besoin
+      // d'un statut Aborted persistant) : le statut reste celui d'avant.
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Signed);
     });
 
     it("rembourse partiellement si le dépôt n'a pas atteint totalAmount", async function () {
@@ -1798,7 +1813,7 @@ describe("Meridian", function () {
       await meridian.connect(buyer).rollbackDeposit(transactionID);
 
       await expect(meridian.connect(buyer).rollbackDeposit(transactionID)).to.be.revertedWith(
-        "No funds to rollback"
+        "No pending amount to rollback"
       );
     });
 

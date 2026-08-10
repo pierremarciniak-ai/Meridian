@@ -12,8 +12,8 @@ import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { meridianAddress } from "@/lib/web3/contracts";
 
 // rollbackDeposit est réservé à l'acheteur (onlyBuyer) et ne fait rien tant
-// que depositedAmount est déjà à 0 (voir canRollbackDeposit) : rien à
-// afficher côté fournisseur ou une fois les fonds déjà récupérés.
+// que pendingWithdrawalAmount est déjà à 0 (voir canRollbackDeposit) : rien à
+// afficher côté fournisseur ou une fois les fonds déjà récupérés/retirés.
 export function RollbackPanel({ transactionId, tx, onRolledBack }: { transactionId: `0x${string}`; tx: OnChainTransaction; onRolledBack: () => void }) {
   const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[tx.currency]);
@@ -27,7 +27,7 @@ export function RollbackPanel({ transactionId, tx, onRolledBack }: { transaction
   return (
     <div className="mt-4">
       <p className="mb-3 text-sm text-danger">
-        Fonds déposés à récupérer: {formatAmount(tx.depositedAmount, decimals)} {symbol}
+        Fonds déposés à récupérer: {formatAmount(tx.pendingWithdrawalAmount, decimals)} {symbol}
       </p>
       <TxStatusLine stage={stage} error={error} />
       <Button

@@ -116,6 +116,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         _transaction.advanceAmount = calculateAdvanceAmount(_details.transactionModel, _details.advanceAmount).toUint128();
         _transaction.totalAmount = _details.totalAmount.toUint128();
         _transaction.billNumber = _billNumber;
+        _transaction.currentEditor = UserType.Seller;
 
         TransactionsList[_transactionID] = _transaction;
 
@@ -148,6 +149,8 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
 
         Transaction storage _transaction = TransactionsList[_transactionID];
 
+        require(_transaction.currentEditor == UserType.Seller, "Only the buyer can currently save transaction details");
+
         _transaction.sellerSanctioned = checkSanction(msg.sender);
 
         if (_transaction.sellerSanctioned) {
@@ -172,6 +175,8 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
 
         Transaction storage _transaction = TransactionsList[_transactionID];
 
+        require(_transaction.currentEditor == UserType.Buyer, "Only the seller can currently save transaction details");
+
         _transaction.buyerSanctioned = checkSanction(msg.sender);
 
         if (_transaction.buyerSanctioned) {
@@ -189,12 +194,14 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
 
     function signTransactionSeller(bytes32 _transactionID) external onlySeller(_transactionID) sellerInfosCompleted(_transactionID)
     onlyCreatedTransaction(_transactionID) {
-        _signTransaction(_transactionID, UserType.Seller);
+
+        signTransaction(_transactionID, UserType.Seller);     
     }
 
     function signTransactionBuyer(bytes32 _transactionID) external onlyBuyer(_transactionID) sellerInfosCompleted(_transactionID)
     onlyCreatedTransaction(_transactionID) {
-        _signTransaction(_transactionID, UserType.Buyer);
+
+        signTransaction(_transactionID, UserType.Buyer);
     }
 
     function mintTransactionNFTBuyer(bytes32 _transactionID) external onlyBuyer(_transactionID) onlySignedTransaction(_transactionID) {
@@ -222,7 +229,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
     }    
 
     function depositFunds(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID) onlySignedTransaction(_transactionID)
-    transactionDateNotOverdue(_transactionID) {
+    {//transactionDateNotOverdue(_transactionID) {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
         _transaction.sellerSanctioned = checkSanction(_transaction.seller.userAddress);
@@ -299,17 +306,17 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         }
     }
 
-    function rollbackDeposit(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID) onlyAbortedTransaction(_transactionID) {
+    function rollbackDeposit(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID) checkRollbackEligibility(_transactionID) {//onlyAbortedTransaction(_transactionID) {
         Transaction storage _transaction = TransactionsList[_transactionID];
-        uint128 _refundAmount = _transaction.depositedAmount;
+        uint128 _refundAmount = _transaction.pendingWithdrawalAmount;
 
-        require(_refundAmount > 0, "No funds to rollback");
+        //require(_refundAmount > 0, "No funds to rollback");
 
         IERC20 _token = tokenAddresses[_transaction.currency];
         require(address(_token) != address(0), "Token address not configured for this currency");
 
+        _transaction.depositedAmount -= _transaction.pendingWithdrawalAmount;
         _transaction.pendingWithdrawalAmount = 0;
-        _transaction.depositedAmount = 0;
         _transaction.refundAmount = _refundAmount;
 
         _token.safeTransfer(_transaction.buyer.userAddress, _refundAmount);
