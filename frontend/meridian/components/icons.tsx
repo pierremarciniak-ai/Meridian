@@ -94,6 +94,19 @@ export function AlertIcon(props: IconProps) {
   );
 }
 
+export function SignatureIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      {/* main stylisée tenant le stylo */}
+      <path d="M5 14.7c-1.3.3-2.2 1.3-2 2.6.3 1.6 2.1 2.4 3.9 1.9l2.3-.7c.8-.2 1.4-.9 1.7-1.7l.3-.9" />
+      {/* stylo */}
+      <path d="M9.2 15.9 18 7.1a1.8 1.8 0 0 0-2.5-2.5L6.6 13.4" />
+      {/* trait de signature */}
+      <path d="M2.5 21c2.7-1 4.3.4 6.7-1.3" />
+    </svg>
+  );
+}
+
 export function ArrowRightIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>

@@ -18,7 +18,15 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Currency, WorkflowStatus } from "@/lib/domain/enums";
 import { formatAmount } from "@/lib/domain/format";
-import { canRollbackDeposit, hasSeller, isTransactionOverdue, sameAddress, transactionExists } from "@/lib/domain/transaction";
+import {
+  canRollbackDeposit,
+  hasSeller,
+  isContainerPositionSufficientForWithdrawal,
+  isRollbackEligible,
+  isTransactionOverdue,
+  sameAddress,
+  transactionExists,
+} from "@/lib/domain/transaction";
 import { useErc20Meta } from "@/hooks/useErc20";
 import { useIsContainerPositionOracle } from "@/hooks/useIsContainerPositionOracle";
 import { useMeridianTransaction } from "@/hooks/useMeridianTransaction";
@@ -125,31 +133,44 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       {tx.workflowStatus === WorkflowStatus.Signed && role === "buyer" && isTransactionOverdue(tx) && canRollbackDeposit(tx) && (
         <Card>
           <CardHeader>
-            <CardTitle>Échéance dépassée</CardTitle>
+            <CardTitle>Date d&apos;expiration de la provision dépassée</CardTitle>
             <AlertIcon className="h-6 w-6 text-danger" />
           </CardHeader>
-          <p className="text-sm text-danger">
-            La date d&apos;annulation de ce dossier est dépassée. Le contrat enregistrera le passage en « Abandonné »
-            au moment de votre retrait ci-dessous — inutile d&apos;attendre une autre action.
-          </p>
-          <RollbackPanel transactionId={id} tx={tx} onRolledBack={() => refetch()} />
+          {isRollbackEligible(tx) ? (
+            <>
+              <p className="text-sm text-danger">
+                La date d&apos;expiration de ce dossier est dépassée. Son statut sera passé à « Abandonné » une fois
+                votre retrait effectué.
+              </p>
+              <RollbackPanel transactionId={id} tx={tx} onRolledBack={() => refetch()} />
+            </>
+          ) : (
+            <p className="text-sm text-danger">
+              La date d&apos;expiration de ce dossier est dépassée, mais la condition de paiement convenue est déjà
+              remplie : le retrait revient désormais au fournisseur, aucune récupération n&apos;est possible de votre
+              côté.
+            </p>
+          )}
         </Card>
       )}
       {tx.workflowStatus === WorkflowStatus.Signed &&
         role === "buyer" &&
-        !(isTransactionOverdue(tx) && canRollbackDeposit(tx)) && (
+        !(isRollbackEligible(tx) && canRollbackDeposit(tx)) && (
           <DepositPanel transactionId={id} tx={tx} onDeposited={() => refetch()} />
         )}
-      {tx.workflowStatus === WorkflowStatus.Signed && role === "seller" && isTransactionOverdue(tx) && (
+      {tx.workflowStatus === WorkflowStatus.Signed &&
+        role === "seller" &&
+        isTransactionOverdue(tx) &&
+        !isContainerPositionSufficientForWithdrawal(tx) && (
         <Card>
           <CardHeader>
-            <CardTitle>Échéance dépassée</CardTitle>
+            <CardTitle>Date d&apos;expiration de la provision dépassée</CardTitle>
             <AlertIcon className="h-6 w-6 text-danger" />
           </CardHeader>
           <p className="text-sm text-danger">
-            La date d&apos;annulation de ce dossier est dépassée. Le retrait reste possible tant que l&apos;acheteur n&apos;a
+            La date d&apos;expiration de ce dossier est dépassée. Le retrait reste possible tant que l&apos;acheteur n&apos;a
             pas déclenché l&apos;abandon de son côté (dépôt ou récupération de fonds) — au-delà, il ne sera plus
-            possible : mieux vaut retirer sans tarder.
+            possible d&apos;effectuer le retrait.
           </p>
         </Card>
       )}
@@ -190,10 +211,10 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
           </CardHeader>
           <p className="text-sm text-danger">
             {tx.buyerSanctioned
-              ? "L'acheteur a été détecté comme sanctionné au moment de sa signature ; le contrat a automatiquement abandonné le dossier."
+              ? "L'acheteur a été détecté comme sanctionné au moment de sa signature."
               : tx.sellerSanctioned
-                ? "Le fournisseur a été détecté comme sanctionné (à la signature ou au retrait) ; le contrat a automatiquement abandonné le dossier."
-                : "L'échéance d'annulation a été dépassée avant la finalisation du dossier ; le contrat l'a automatiquement marqué comme abandonné."}
+                ? "Le fournisseur a été détecté comme sanctionné (à la signature ou au retrait)."
+                : "La date d'expiration de la provision a été dépassée et le dépôt a été retiré par l'acheteur."}
           </p>
           {role === "buyer" && canRollbackDeposit(tx) && <RollbackPanel transactionId={id} tx={tx} onRolledBack={() => refetch()} />}
         </Card>

@@ -1763,7 +1763,9 @@ describe("Meridian", function () {
       const buyerBalanceBefore = await usdc.balanceOf(buyer.address);
 
       await expect(meridian.connect(buyer).rollbackDeposit(transactionID))
-        .to.emit(meridian, "totalAmountRefunded")
+        .to.emit(meridian, "TransactionAborted")
+        .withArgs(transactionID, buyer.address, ctx.seller.address)
+        .and.to.emit(meridian, "totalAmountRefunded")
         .withArgs(transactionID, buyer.address, totalAmount, Currency.USDC);
 
       const buyerBalanceAfter = await usdc.balanceOf(buyer.address);
@@ -1773,10 +1775,12 @@ describe("Meridian", function () {
       expect(stored.depositedAmount).to.equal(0);
       expect(stored.pendingWithdrawalAmount).to.equal(0);
       expect(stored.totalAmountRefunded).to.equal(true);
-      // rollbackDeposit ne modifie plus workflowStatus (l'éligibilité est
-      // recalculée à la volée par rollbackEligibilityStatus, plus besoin
-      // d'un statut Aborted persistant) : le statut reste celui d'avant.
-      expect(stored.workflowStatus).to.equal(WorkflowStatus.Signed);
+      // rollbackEligibilityStatus fait désormais persister le passage à
+      // Aborted (effet de bord) quand l'éligibilité vient de la voie
+      // "échéance dépassée + condition non remplie" — avant, le statut
+      // restait Signed indéfiniment tant que personne ne déclenchait la
+      // transition.
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
     });
 
     it("rembourse partiellement si le dépôt n'a pas atteint totalAmount", async function () {
@@ -1798,11 +1802,13 @@ describe("Meridian", function () {
       await jumpPastCancellingDate(ethers, stored.transactionCancellingDate);
 
       await expect(meridian.connect(buyer).rollbackDeposit(transactionID))
-        .to.emit(meridian, "partialAmountRefunded")
+        .to.emit(meridian, "TransactionAborted")
+        .and.to.emit(meridian, "partialAmountRefunded")
         .withArgs(transactionID, buyer.address, advance, Currency.USDC);
 
       const after = await meridian.getTransaction(transactionID);
       expect(after.partialAmountRefunded).to.equal(true);
+      expect(after.workflowStatus).to.equal(WorkflowStatus.Aborted);
     });
 
     it("refuse un second rollback une fois les fonds déjà remboursés", async function () {

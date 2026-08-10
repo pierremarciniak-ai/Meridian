@@ -111,7 +111,7 @@ export function TransactionSummary({
           <Row label="Montant total">
             {formatAmount(tx.totalAmount, decimals)} {symbol}
           </Row>
-          <Row label="Échéance">{formatUnixDate(tx.transactionCancellingDate)}</Row>
+          <Row label="Date d'expiration de la provision">{formatUnixDate(tx.transactionCancellingDate)}</Row>
         </div>
 
         <h3 className="label-caps mb-1 mt-6">Règlement</h3>

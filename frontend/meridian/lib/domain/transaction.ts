@@ -134,6 +134,13 @@ export function canRollbackDeposit(tx: OnChainTransaction): boolean {
   return tx.pendingWithdrawalAmount > 0n;
 }
 
+// Miroir client de la garde combinée dans withdrawFunds (montant en attente +
+// position du conteneur) : indique si le fournisseur a réellement un retrait
+// disponible maintenant, pas seulement un solde théorique — voir WithdrawPanel.
+export function canWithdraw(tx: OnChainTransaction): boolean {
+  return tx.pendingWithdrawalAmount > 0n && isContainerPositionSufficientForWithdrawal(tx);
+}
+
 // Miroir client de checkAbortedStatus : le contrat ne fait cette transition
 // que paresseusement, en effet de bord du prochain appel à une fonction
 // gardée (depositFunds, rollbackDeposit...). Tant que personne ne l'a
@@ -142,4 +149,42 @@ export function canRollbackDeposit(tx: OnChainTransaction): boolean {
 // pour l'acheteur alors que l'appel réussirait déjà on-chain.
 export function isTransactionOverdue(tx: Pick<OnChainTransaction, "transactionCancellingDate">): boolean {
   return Math.floor(Date.now() / 1000) >= tx.transactionCancellingDate;
+}
+
+// Miroir client exact de rollbackEligibilityStatus (InternalFunctions.sol).
+// Contrairement à isTransactionOverdue seul, tient aussi compte de la
+// position du conteneur : si elle satisfait déjà la condition de livraison
+// convenue (le fournisseur a rempli sa part), le contrat refuse le rollback
+// même une fois l'échéance dépassée — le retrait normal (withdrawFunds) est
+// alors la seule voie. Sans ce miroir, le bouton de rollback resterait
+// affiché côté acheteur dans des cas où l'appel on-chain reverterait.
+export function isRollbackEligible(tx: OnChainTransaction): boolean {
+  if (tx.workflowStatus === WorkflowStatus.Aborted) return true;
+  if (!isTransactionOverdue(tx)) return false;
+  if (tx.transactionCondition === TransactionCondition.AtTheBeginningOfDelivery) {
+    return tx.containerPositionStatus === ContainerPositionStatus.UnSet;
+  }
+  return tx.containerPositionStatus !== ContainerPositionStatus.AtDestination;
+}
+
+// Reflète exactement les conditions d'affichage de DepositPanel/RollbackPanel
+// (acheteur) et WithdrawPanel (fournisseur) dans TransactionDetail — sert à
+// afficher une bulle "Action requise" dans la liste des dossiers sans dupliquer
+// la logique de gating propre à chaque panneau. `null` = rien à faire pour
+// l'instant côté utilisateur connecté.
+export function pendingActionReason(tx: OnChainTransaction, role: "buyer" | "seller" | null): "deposit" | "rollback" | "withdraw" | null {
+  if (tx.workflowStatus !== WorkflowStatus.Signed && tx.workflowStatus !== WorkflowStatus.Aborted) return null;
+
+  if (role === "buyer") {
+    const rollbackAvailable = canRollbackDeposit(tx) && isRollbackEligible(tx);
+    if (rollbackAvailable) return "rollback";
+    if (tx.workflowStatus === WorkflowStatus.Signed && !tx.depositCompleted) return "deposit";
+    return null;
+  }
+
+  if (role === "seller") {
+    return tx.workflowStatus === WorkflowStatus.Signed && canWithdraw(tx) ? "withdraw" : null;
+  }
+
+  return null;
 }

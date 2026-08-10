@@ -27,7 +27,7 @@ export function RollbackPanel({ transactionId, tx, onRolledBack }: { transaction
   return (
     <div className="mt-4">
       <p className="mb-3 text-sm text-danger">
-        Fonds déposés à récupérer: {formatAmount(tx.pendingWithdrawalAmount, decimals)} {symbol}
+        Provision déposée à récupérer: {formatAmount(tx.pendingWithdrawalAmount, decimals)} {symbol}
       </p>
       <TxStatusLine stage={stage} error={error} />
       <Button
@@ -43,7 +43,7 @@ export function RollbackPanel({ transactionId, tx, onRolledBack }: { transaction
           })
         }
       >
-        Récupérer mes fonds
+        Restituer la provision disponible
       </Button>
     </div>
   );

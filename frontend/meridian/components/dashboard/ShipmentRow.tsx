@@ -4,23 +4,37 @@ import Link from "next/link";
 import type { Hex } from "viem";
 import { useAccount } from "wagmi";
 import { StatusBadge } from "@/components/StatusBadge";
-import { currencyLabels } from "@/lib/domain/enums";
+import { AlertIcon, ClockIcon, SignatureIcon } from "@/components/icons";
+import { currencyLabels, UserType, WorkflowStatus } from "@/lib/domain/enums";
 import { formatAmount, formatUnixDate, truncateHex } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
-import { sameAddress } from "@/lib/domain/transaction";
+import { isCurrentEditor, isTransactionOverdue, pendingActionReason, sameAddress } from "@/lib/domain/transaction";
 import { useErc20Meta } from "@/hooks/useErc20";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
+
+const actionLabels = {
+  deposit: "Dépôt à faire",
+  rollback: "Retrait disponible",
+  withdraw: "Retrait disponible",
+} as const;
+
+const signatureLabels = {
+  [UserType.Buyer]: "En attente signature acheteur",
+  [UserType.Seller]: "En attente signature fournisseur",
+} as const;
 
 export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
   const { address } = useAccount();
   const { tokenAddresses } = useTokenAddresses();
   const { decimals } = useErc20Meta(tokenAddresses[tx.currency]);
 
-  const role = sameAddress(tx.buyer.userAddress, address)
-    ? "Acheteur"
-    : sameAddress(tx.seller.userAddress, address)
-      ? "Fournisseur"
-      : null;
+  const isBuyer = sameAddress(tx.buyer.userAddress, address);
+  const isSeller = sameAddress(tx.seller.userAddress, address);
+  const roleKey: "buyer" | "seller" | null = isBuyer ? "buyer" : isSeller ? "seller" : null;
+  const role = isBuyer ? "Acheteur" : isSeller ? "Fournisseur" : null;
+  const actionReason = pendingActionReason(tx, roleKey);
+  const overdue = tx.workflowStatus === WorkflowStatus.Signed && isTransactionOverdue(tx);
+  const awaitingSignature = tx.workflowStatus === WorkflowStatus.Created;
 
   return (
     <Link
@@ -43,8 +57,32 @@ export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
         <span className="text-xs text-subtle">Échéance {formatUnixDate(tx.transactionCancellingDate)}</span>
       </div>
 
-      <div className="flex w-auto shrink-0 items-center justify-end sm:w-[250px]">
+      <div className="flex w-auto shrink-0 flex-col items-end gap-1.5 sm:w-[250px]">
         <StatusBadge status={tx.workflowStatus} />
+        {awaitingSignature &&
+          (isCurrentEditor(tx, roleKey) ? (
+            <span className="waiting-badge">
+              <SignatureIcon className="h-3 w-3" />
+              En attente de ma signature
+            </span>
+          ) : (
+            <span className="waiting-badge">
+              <ClockIcon className="h-3 w-3" />
+              {signatureLabels[tx.currentEditor]}
+            </span>
+          ))}
+        {overdue && (
+          <span className="warning-badge">
+            <AlertIcon className="h-3 w-3" />
+            Date d'expiration dépassée
+          </span>
+        )}
+        {actionReason && (
+          <span className="action-badge">
+            <AlertIcon className="h-3 w-3" />
+            {actionLabels[actionReason]}
+          </span>
+        )}
       </div>
     </Link>
   );

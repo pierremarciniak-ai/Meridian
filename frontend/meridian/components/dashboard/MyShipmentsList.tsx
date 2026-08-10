@@ -6,6 +6,8 @@ import { ShipmentRow } from "@/components/dashboard/ShipmentRow";
 import { AlertIcon, ContainerShipIcon, SearchIcon } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
+import { WorkflowStatus } from "@/lib/domain/enums";
+import { isCurrentEditor, pendingActionReason, sameAddress } from "@/lib/domain/transaction";
 import { useMyShipments } from "@/hooks/useMyShipments";
 
 export function MyShipmentsList() {
@@ -19,6 +21,20 @@ export function MyShipmentsList() {
     return shipments.filter(({ id, tx }) => id.toLowerCase().includes(q) || tx.billNumber.toLowerCase().includes(q));
   }, [shipments, query]);
 
+  // Nombre de dossiers pour lesquels le wallet connecté (acheteur ou
+  // fournisseur) a une action disponible : dépôt, retrait, ou signature en
+  // attente — mêmes conditions que les bulles de ShipmentRow, pas de logique
+  // dupliquée.
+  const pendingCount = useMemo(() => {
+    if (!address) return 0;
+    return shipments.reduce((count, { tx }) => {
+      const roleKey = sameAddress(tx.buyer.userAddress, address) ? "buyer" : sameAddress(tx.seller.userAddress, address) ? "seller" : null;
+      const awaitingMySignature = tx.workflowStatus === WorkflowStatus.Created && isCurrentEditor(tx, roleKey);
+      const hasAction = pendingActionReason(tx, roleKey) !== null || awaitingMySignature;
+      return hasAction ? count + 1 : count;
+    }, 0);
+  }, [shipments, address]);
+
   return (
     <Card>
       <CardHeader>
@@ -27,6 +43,15 @@ export function MyShipmentsList() {
           Rafraîchir
         </Button>
       </CardHeader>
+
+      {isConnected && pendingCount > 0 && (
+        <div className="action-banner">
+          <AlertIcon className="h-4 w-4 shrink-0" />
+          {pendingCount > 1
+            ? `${pendingCount} dossiers nécessitent une action de votre part.`
+            : "1 dossier nécessite une action de votre part."}
+        </div>
+      )}
 
       {!isConnected && (
         <p className="flex flex-col items-center gap-3 py-10 text-center text-sm text-subtle">

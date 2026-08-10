@@ -489,7 +489,7 @@ abstract contract InternalFunctions is Ownable {
     //     }
     // }    
 
-    function rollbackEligibilityStatus(bytes32 _transactionID) internal view returns (bool _status) {
+    function rollbackEligibilityStatus(bytes32 _transactionID) internal returns (bool _status) {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
         if (_transaction.workflowStatus == WorkflowStatus.TransactionAborted) {
@@ -500,9 +500,14 @@ abstract contract InternalFunctions is Ownable {
             _transaction.containerPositionStatus == ContainerPositionStatus.UnSet) ||
             (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery &&
             _transaction.containerPositionStatus != ContainerPositionStatus.AtDestination)) {
+                
+                _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
+
+                emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+
                 return true;
             }
-        } 
+        }
         return false;
     } 
 
