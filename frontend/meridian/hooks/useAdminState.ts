@@ -15,7 +15,6 @@ export function useAdminState() {
       { address: meridianAddress, abi: meridianAbi, functionName: "mockSanctionsOracleAddress" },
       { address: meridianAddress, abi: meridianAbi, functionName: "meridianNFTAddress" },
       { address: meridianAddress, abi: meridianAbi, functionName: "containerPositionOracleAddress" },
-      { address: meridianAddress, abi: meridianAbi, functionName: "checkSanctionsEnabled" },
       { address: meridianAddress, abi: meridianAbi, functionName: "mockSanctionsEnabled" },
       { address: meridianAddress, abi: meridianAbi, functionName: "tokenAddresses", args: [Currency.USDC] },
       { address: meridianAddress, abi: meridianAbi, functionName: "tokenAddresses", args: [Currency.USDT] },
@@ -23,7 +22,7 @@ export function useAdminState() {
     ],
   });
 
-  const [owner, sanctionsOracleAddress, mockSanctionsOracleAddress, meridianNFTAddress, containerPositionOracleAddress, checkSanctionsEnabled, mockSanctionsEnabled, usdc, usdt, eurc] =
+  const [owner, sanctionsOracleAddress, mockSanctionsOracleAddress, meridianNFTAddress, containerPositionOracleAddress, mockSanctionsEnabled, usdc, usdt, eurc] =
     data ?? [];
 
   return {
@@ -34,7 +33,6 @@ export function useAdminState() {
     mockSanctionsOracleAddress: mockSanctionsOracleAddress?.result as `0x${string}` | undefined,
     meridianNFTAddress: meridianNFTAddress?.result as `0x${string}` | undefined,
     containerPositionOracleAddress: containerPositionOracleAddress?.result as `0x${string}` | undefined,
-    checkSanctionsEnabled: checkSanctionsEnabled?.result as boolean | undefined,
     mockSanctionsEnabled: mockSanctionsEnabled?.result as boolean | undefined,
     tokenAddressesOnChain: {
       [Currency.USDC]: usdc?.result as `0x${string}` | undefined,

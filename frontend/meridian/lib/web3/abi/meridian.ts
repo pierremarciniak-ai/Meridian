@@ -260,19 +260,6 @@ export const meridianAbi = [
     "anonymous": false,
     "inputs": [
       {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "status",
-        "type": "bool"
-      }
-    ],
-    "name": "SanctionsCheckToggled",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
         "indexed": true,
         "internalType": "address",
         "name": "newOracle",
@@ -593,19 +580,6 @@ export const meridianAbi = [
     "name": "addExemptAddress",
     "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "checkSanctionsEnabled",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1306,19 +1280,6 @@ export const meridianAbi = [
   {
     "inputs": [
       {
-        "internalType": "bool",
-        "name": "_actualSetting",
-        "type": "bool"
-      }
-    ],
-    "name": "toggleSanctionsCheck",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "enum InternalFunctions.Currency",
         "name": "",
         "type": "uint8"
@@ -1385,6 +1346,19 @@ export const meridianAbi = [
       }
     ],
     "name": "SellerIsNowEditor",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "userAddress",
+        "type": "address"
+      }
+    ],
+    "name": "SanctionsOracleCallFailed",
     "type": "event"
   }
 ] as const;

@@ -8,6 +8,9 @@ contract SanctionsList is Ownable {
 
     mapping(address => uint256) private sanctionedGeneration;
     uint256 private currentGeneration = 1;
+    // Simule une panne de l'oracle (bug, pause, etc.) pour les tests de
+    // checkSanction — voir InternalFunctions.sol.
+    bool public broken;
 
     // Le mapping seul ne permet aucune énumération : ces events sont le seul
     // moyen pour un client (front admin) de reconstruire la liste des
@@ -35,7 +38,12 @@ contract SanctionsList is Ownable {
     // est alors l'adresse de Meridian — jamais le owner de SanctionsList.
     // Restreindre la lecture casserait toute vérification de sanction.
     function isSanctioned(address _addr) external view returns (bool) {
+        require(!broken, "SanctionsList: oracle is down");
         return sanctionedGeneration[_addr] == currentGeneration;
+    }
+
+    function setBroken(bool _broken) external onlyOwner {
+        broken = _broken;
     }
 
     function unSetAllSanctioned() external onlyOwner {

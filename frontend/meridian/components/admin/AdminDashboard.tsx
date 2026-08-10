@@ -54,7 +54,6 @@ export function AdminDashboard() {
         mockSanctionsOracleAddress={admin.mockSanctionsOracleAddress}
         meridianNFTAddress={admin.meridianNFTAddress}
         containerPositionOracleAddress={admin.containerPositionOracleAddress}
-        checkSanctionsEnabled={admin.checkSanctionsEnabled}
         mockSanctionsEnabled={admin.mockSanctionsEnabled}
         onUpdated={admin.refetch}
       />

@@ -84,14 +84,6 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         transferOwnership(_newOwner);
     }
 
-    function toggleSanctionsCheck(bool _actualSetting) external onlyOwner {
-        if (checkSanctionsEnabled != _actualSetting) {
-            checkSanctionsEnabled = _actualSetting;
-
-            emit SanctionsCheckToggled(_actualSetting);
-        }
-    }
-
     function initializeTransaction(TransactionDetailsInput calldata _details, string calldata _billNumber) external
     onlyUnsanctioned(msg.sender) {
         internalID++;
@@ -261,7 +253,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
     }
 
     function withdrawFunds(bytes32 _transactionID) external nonReentrant onlySeller(_transactionID)
-    onlySignedTransaction(_transactionID) {
+    onlySignedTransaction(_transactionID) checkWithdrawalEligibility(_transactionID) {
         Transaction storage _transaction = TransactionsList[_transactionID];
         Currency _currency = _transaction.currency;
 
@@ -273,29 +265,16 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
 
             emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
         } else {
-            require(_transaction.withdrawalCompleted == false, "Withdrawal already completed");
-
-            uint128 _amount = _transaction.pendingWithdrawalAmount;
-            require(_amount > 0, "Nothing to withdraw");
-
-            if (_transaction.advancePaymentMode == AdvancePaymentMode.Deferred || _transaction.partialWithdrawalCompleted) {
-                if (_transaction.transactionCondition == TransactionCondition.AtTheBeginningOfDelivery) {
-                    require(_transaction.containerPositionStatus == ContainerPositionStatus.InTransit ||
-                    _transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be in transit or at destination for withdrawal");
-                } else if (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery) {
-                    require(_transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be at destination for withdrawal");
-                }
-            }
-
             IERC20 _token = tokenAddresses[_currency];
             require(address(_token) != address(0), "Token address not configured for this currency");
 
+            uint128 _amountToWithdraw = _transaction.pendingWithdrawalAmount;
             _transaction.pendingWithdrawalAmount = 0;
             _transaction.partialWithdrawalCompleted = true;
 
-            _token.safeTransfer(_transaction.seller.userAddress, _amount);
+            _token.safeTransfer(_transaction.seller.userAddress, _amountToWithdraw);
 
-            emit FundsWithdrawn(_transactionID, _transaction.seller.userAddress, _amount, _transaction.currency);
+            emit FundsWithdrawn(_transactionID, _transaction.seller.userAddress, _amountToWithdraw, _transaction.currency);
 
             if (_transaction.pendingWithdrawalAmount == 0 && _transaction.depositCompleted) {
                 _transaction.workflowStatus = WorkflowStatus.TransactionCompleted;

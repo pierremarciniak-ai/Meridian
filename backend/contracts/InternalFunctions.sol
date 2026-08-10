@@ -201,7 +201,6 @@ abstract contract InternalFunctions is Ownable {
     // intérêt à mentir pour débloquer les fonds plus tôt.
     address public containerPositionOracleAddress;
 
-    bool public checkSanctionsEnabled = true;
     bool public mockSanctionsEnabled = true;
   
     mapping(address => bool) public isExempt;
@@ -251,8 +250,24 @@ abstract contract InternalFunctions is Ownable {
     //     _;
     // }
 
+    modifier checkWithdrawalEligibility(bytes32 _transactionID) {
+        Transaction storage _transaction = TransactionsList[_transactionID];
+
+        require(_transaction.withdrawalCompleted == false, "Withdrawal already completed");
+        require(_transaction.pendingWithdrawalAmount > 0, "No pending amount to withdraw");
+
+        if (_transaction.advancePaymentMode == AdvancePaymentMode.Deferred || _transaction.partialWithdrawalCompleted) {
+            if (_transaction.transactionCondition == TransactionCondition.AtTheBeginningOfDelivery) {
+                require(_transaction.containerPositionStatus == ContainerPositionStatus.InTransit ||
+                _transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be in transit or at destination for withdrawal");
+            } else if (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery) {
+                require(_transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be at destination for withdrawal");
+            }
+        }
+        _;
+    }
+
     modifier checkRollbackEligibility(bytes32 _transactionID) {
-        require(TransactionsList[_transactionID].pendingWithdrawalAmount > 0, "No pending amount to rollback");
         require(rollbackEligibilityStatus(_transactionID), "Transaction is not eligible for rollback");
         _;
     }
@@ -295,10 +310,16 @@ abstract contract InternalFunctions is Ownable {
     event totalAmountRefunded(bytes32 indexed transactionID, address indexed buyer, uint amount, Currency currency);
     event partialAmountRefunded(bytes32 indexed transactionID, address indexed buyer, uint amount, Currency currency);
     event AddressSanctioned(address indexed userAddress);
+    // Émis quand l'appel à l'oracle échoue (pas de contrat à l'adresse
+    // configurée, revert interne, panne...) : checkSanction traite alors
+    // l'adresse comme NON sanctionnée pour ne pas bloquer la transaction
+    // (voir checkSanction) — cet event permet de repérer une panne d'oracle
+    // dans les logs, puisque le comportement on-chain ne la distingue sinon
+    // pas d'une vérification qui a simplement conclu "non sanctionné".
+    event SanctionsOracleCallFailed(address indexed userAddress);
     event SanctionsOracleAddressUpdated(address indexed newOracle);
     event MockSanctionsOracleAddressUpdated(address indexed newMockOracle);
     event MockSanctionsToggled(bool status);
-    event SanctionsCheckToggled(bool status);
     event ExemptAddressAdded(address indexed account);
     event ExemptAddressRemoved(address indexed account);
     event TokenAddressUpdated(Currency indexed currency, address indexed tokenAddress);
@@ -487,10 +508,29 @@ abstract contract InternalFunctions is Ownable {
     //     } else {
     //         return false;
     //     }
-    // }    
+    // }   
+
+    function withdrawalEligibilityStatus(bytes32 _transactionID) internal view returns (bool _status) {
+        Transaction storage _transaction = TransactionsList[_transactionID];
+
+        require(_transaction.withdrawalCompleted == false, "Withdrawal already completed");
+        require(_transaction.pendingWithdrawalAmount > 0, "No pending amount to withdraw");
+
+        if (_transaction.advancePaymentMode == AdvancePaymentMode.Deferred || _transaction.partialWithdrawalCompleted) {
+            if (_transaction.transactionCondition == TransactionCondition.AtTheBeginningOfDelivery) {
+                require(_transaction.containerPositionStatus == ContainerPositionStatus.InTransit ||
+                _transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be in transit or at destination for withdrawal");
+            } else if (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery) {
+                require(_transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be at destination for withdrawal");
+            }
+        }
+        return true;
+    }
 
     function rollbackEligibilityStatus(bytes32 _transactionID) internal returns (bool _status) {
         Transaction storage _transaction = TransactionsList[_transactionID];
+
+        require(_transaction.pendingWithdrawalAmount > 0, "No pending amount to rollback");
 
         if (_transaction.workflowStatus == WorkflowStatus.TransactionAborted) {
             return true;
@@ -512,15 +552,21 @@ abstract contract InternalFunctions is Ownable {
     } 
 
     function checkSanction(address _userAddress) internal returns (bool) {
-        if (checkSanctionsEnabled && !isExempt[_userAddress]) {
-            address _oracleAddress = mockSanctionsEnabled ? mockSanctionsOracleAddress : sanctionsOracleAddress;
-            bool _sanctioned = ISanctionsList(_oracleAddress).isSanctioned(_userAddress);
+        if (isExempt[_userAddress]) {
+            return false;
+        }
 
+        address _oracleAddress = mockSanctionsEnabled ? mockSanctionsOracleAddress : sanctionsOracleAddress;
+
+        try ISanctionsList(_oracleAddress).isSanctioned(_userAddress) returns (bool _sanctioned) {
             if (_sanctioned) {
                 emit AddressSanctioned(_userAddress);
                 return true;
             }
+            return false;
+        } catch {
+            emit SanctionsOracleCallFailed(_userAddress);
+            return false;
         }
-        return false;
     }
 }

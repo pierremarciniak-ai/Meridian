@@ -473,43 +473,84 @@ describe("Meridian", function () {
   });
 
   // =========================================================================
-  // toggleSanctionsCheck
+  // checkSanction — panne de l'oracle (le contrôle n'est plus désactivable :
+  // voir InternalFunctions.sol. checkSanction est fail-open : si l'appel à
+  // l'oracle échoue, l'adresse est traitée comme NON sanctionnée pour ne pas
+  // bloquer la transaction, avec SanctionsOracleCallFailed émis pour tracer
+  // l'incident).
   // =========================================================================
-  describe("toggleSanctionsCheck", function () {
-    it("désactive globalement le contrôle des sanctions", async function () {
+  describe("checkSanction — panne de l'oracle", function () {
+    it("n'empêche pas l'appel (fail-open) si l'oracle revert, mais émet SanctionsOracleCallFailed", async function () {
       const ctx = await deployFixture();
       const { ethers, meridian, mockSanctionsOracle, buyer } = ctx;
 
-      await mockSanctionsOracle.setSanctioned(buyer.address);
+      await mockSanctionsOracle.setBroken(true);
 
       const totalAmount = ethers.parseUnits("100", 6);
       const cancellingDate = await futureDate(ethers);
       const details = buildDetails({}, { totalAmount, transactionCancellingDate: cancellingDate });
 
-      await expect(
-        meridian.connect(buyer).initializeTransaction(details, "BILL-CHECK-ON")
-      ).to.be.revertedWithCustomError(meridian, "AddressIsSanctioned");
+      await expect(meridian.connect(buyer).initializeTransaction(details, "BILL-ORACLE-DOWN"))
+        .to.emit(meridian, "SanctionsOracleCallFailed")
+        .withArgs(buyer.address)
+        .and.to.emit(meridian, "TransactionInitialized");
+    });
 
-      await expect(meridian.toggleSanctionsCheck(false))
-        .to.emit(meridian, "SanctionsCheckToggled")
-        .withArgs(false);
+    it("ne bloque pas l'action (fail-open) et émet SanctionsOracleCallFailed quand l'oracle échoue lors d'une vérification qui, sinon, aurait abandonné la transaction", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, mockSanctionsOracle, buyer } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.FullLocked,
+      });
 
-      await expect(meridian.connect(buyer).initializeTransaction(details, "BILL-CHECK-OFF")).to.emit(
+      await mockSanctionsOracle.setBroken(true);
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+
+      await expect(meridian.connect(buyer).depositFunds(transactionID)).to.emit(meridian, "SanctionsOracleCallFailed");
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.not.equal(WorkflowStatus.Aborted);
+      expect(stored.buyerSanctioned).to.equal(false);
+      expect(stored.sellerSanctioned).to.equal(false);
+      expect(stored.depositedAmount).to.equal(totalAmount);
+      expect(stored.depositCompleted).to.equal(true);
+    });
+
+    it("une adresse exemptée n'interroge même pas l'oracle (donc reste exemptée qu'il soit cassé ou non)", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, mockSanctionsOracle, buyer } = ctx;
+
+      await meridian.addExemptAddress(buyer.address);
+      await mockSanctionsOracle.setBroken(true);
+
+      const totalAmount = ethers.parseUnits("100", 6);
+      const cancellingDate = await futureDate(ethers);
+      const details = buildDetails({}, { totalAmount, transactionCancellingDate: cancellingDate });
+
+      await expect(meridian.connect(buyer).initializeTransaction(details, "BILL-EXEMPT-ORACLE-DOWN")).to.emit(
         meridian,
         "TransactionInitialized"
       );
     });
 
-    it("n'émet pas d'event si la valeur ne change pas", async function () {
-      const { meridian } = await deployFixture();
-      await expect(meridian.toggleSanctionsCheck(true)).to.not.emit(meridian, "SanctionsCheckToggled");
-    });
+    it("(comportement réel documenté) si l'oracle configuré n'a pas de code du tout, le try/catch ne rattrape pas l'échec : la transaction revert au lieu de rester fail-open", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, buyer, other } = ctx;
 
-    it("refuse un appel par un compte non-owner", async function () {
-      const { meridian, other } = await deployFixture();
-      await expect(meridian.connect(other).toggleSanctionsCheck(false))
-        .to.be.revertedWithCustomError(meridian, "OwnableUnauthorizedAccount")
-        .withArgs(other.address);
+      // other.address est un compte externe (EOA), sans aucun contrat déployé.
+      // Contrairement à un oracle qui revert (cas ci-dessus, bien rattrapé par
+      // le try/catch), ce cas précis échappe au catch sur ce couple
+      // Hardhat 3 (EDR) / Solidity 0.8.28 : la transaction échoue avec un
+      // revert "brut" (sans raison) au lieu de suivre la voie fail-open
+      // prévue par checkSanction — donc ici plus restrictif que voulu (pas
+      // moins sûr, juste incohérent avec l'intention).
+      await meridian.setMockSanctionsOracleAddress(other.address);
+
+      const totalAmount = ethers.parseUnits("100", 6);
+      const cancellingDate = await futureDate(ethers);
+      const details = buildDetails({}, { totalAmount, transactionCancellingDate: cancellingDate });
+
+      await expect(meridian.connect(buyer).initializeTransaction(details, "BILL-ORACLE-NO-CODE")).to.revert(ethers);
     });
   });
 

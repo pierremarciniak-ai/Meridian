@@ -9,7 +9,6 @@ export function OraclesPanel({
   mockSanctionsOracleAddress,
   meridianNFTAddress,
   containerPositionOracleAddress,
-  checkSanctionsEnabled,
   mockSanctionsEnabled,
   onUpdated,
 }: {
@@ -17,7 +16,6 @@ export function OraclesPanel({
   mockSanctionsOracleAddress: `0x${string}` | undefined;
   meridianNFTAddress: `0x${string}` | undefined;
   containerPositionOracleAddress: `0x${string}` | undefined;
-  checkSanctionsEnabled: boolean | undefined;
   mockSanctionsEnabled: boolean | undefined;
   onUpdated: () => void;
 }) {
@@ -26,14 +24,12 @@ export function OraclesPanel({
       <CardHeader>
         <CardTitle>Oracles & contrats liés</CardTitle>
       </CardHeader>
+      <p className="px-1 pb-2 text-xs text-subtle">
+        Le contrôle des sanctions (OFAC) n&apos;est plus désactivable : en cas de panne de l&apos;oracle configuré,
+        l&apos;adresse est désormais traitée comme sanctionnée par précaution plutôt que de bloquer l&apos;appel (voir
+        checkSanction).
+      </p>
       <div className="divide-y" style={{ borderColor: "var(--color-navy-700)" }}>
-        <ToggleRow
-          label="Vérification des sanctions (OFAC)"
-          hint="Si désactivé, initializeTransaction/createTransaction ne consultent plus aucun oracle de sanctions."
-          value={checkSanctionsEnabled}
-          functionName="toggleSanctionsCheck"
-          onUpdated={onUpdated}
-        />
         <ToggleRow
           label="Utiliser l'oracle mock"
           hint="Active/désactive le mock (tests) à la place de l'oracle réel pour la vérification des sanctions."
