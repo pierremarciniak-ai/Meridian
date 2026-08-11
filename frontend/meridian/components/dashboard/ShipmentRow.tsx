@@ -4,11 +4,17 @@ import Link from "next/link";
 import type { Hex } from "viem";
 import { useAccount } from "wagmi";
 import { StatusBadge } from "@/components/StatusBadge";
-import { AlertIcon, ClockIcon, SignatureIcon } from "@/components/icons";
+import { AlertIcon, CheckIcon, ClockIcon, SignatureIcon } from "@/components/icons";
 import { currencyLabels, UserType, WorkflowStatus } from "@/lib/domain/enums";
 import { formatAmount, formatUnixDate, truncateHex } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
-import { isCurrentEditor, isTransactionOverdue, pendingActionReason, sameAddress } from "@/lib/domain/transaction";
+import {
+  depositProgressStatus,
+  isCurrentEditor,
+  isTransactionOverdue,
+  pendingActionReason,
+  sameAddress,
+} from "@/lib/domain/transaction";
 import { useErc20Meta } from "@/hooks/useErc20";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 
@@ -23,6 +29,11 @@ const signatureLabels = {
   [UserType.Seller]: "En attente signature fournisseur",
 } as const;
 
+const depositProgressLabels = {
+  advance: "Acompte déposé",
+  full: "Montant total déposé",
+} as const;
+
 export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
   const { address } = useAccount();
   const { tokenAddresses } = useTokenAddresses();
@@ -35,6 +46,7 @@ export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
   const actionReason = pendingActionReason(tx, roleKey);
   const overdue = tx.workflowStatus === WorkflowStatus.Signed && isTransactionOverdue(tx);
   const awaitingSignature = tx.workflowStatus === WorkflowStatus.Created;
+  const depositProgress = depositProgressStatus(tx);
 
   return (
     <Link
@@ -71,10 +83,16 @@ export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
               {signatureLabels[tx.currentEditor]}
             </span>
           ))}
+        {depositProgress && (
+          <span className="waiting-badge">
+            <CheckIcon className="h-3 w-3" />
+            {depositProgressLabels[depositProgress]}
+          </span>
+        )}
         {overdue && (
           <span className="warning-badge">
             <AlertIcon className="h-3 w-3" />
-            Date d'expiration dépassée
+            Date d&apos;expiration dépassée
           </span>
         )}
         {actionReason && (

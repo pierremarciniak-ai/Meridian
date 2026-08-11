@@ -712,6 +712,11 @@ export const meridianAbi = [
           },
           {
             "internalType": "bool",
+            "name": "feesPaid",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
             "name": "depositCompleted",
             "type": "bool"
           },
@@ -1227,6 +1232,58 @@ export const meridianAbi = [
     "inputs": [
       {
         "internalType": "address",
+        "name": "_feesWalletAddress",
+        "type": "address"
+      }
+    ],
+    "name": "setFeesWalletAddress",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint128",
+        "name": "_feesAmount",
+        "type": "uint128"
+      }
+    ],
+    "name": "setFeesAmount",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feesAmount",
+    "outputs": [
+      {
+        "internalType": "uint128",
+        "name": "",
+        "type": "uint128"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feesWalletAddress",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
         "name": "_meridianNFT",
         "type": "address"
       }
@@ -1442,6 +1499,69 @@ export const meridianAbi = [
       }
     ],
     "name": "SanctionsOracleCallFailed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "newFeesAmount",
+        "type": "uint128"
+      }
+    ],
+    "name": "FeesAmountUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newFeesWallet",
+        "type": "address"
+      }
+    ],
+    "name": "FeesWalletAddressUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "transactionID",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "buyer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "feesWallet",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum InternalFunctions.Currency",
+        "name": "currency",
+        "type": "uint8"
+      }
+    ],
+    "name": "FeesPaid",
     "type": "event"
   }
 ] as const;

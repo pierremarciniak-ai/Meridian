@@ -2,6 +2,7 @@
 
 import { useAccount } from "wagmi";
 import { ExemptListPanel } from "@/components/admin/ExemptListPanel";
+import { FeesPanel } from "@/components/admin/FeesPanel";
 import { OraclesPanel } from "@/components/admin/OraclesPanel";
 import { OwnerPanel } from "@/components/admin/OwnerPanel";
 import { SanctionsListPanel } from "@/components/admin/SanctionsListPanel";
@@ -49,6 +50,7 @@ export function AdminDashboard() {
     <div className="flex flex-col gap-6">
       <OwnerPanel owner={admin.owner} onUpdated={admin.refetch} />
       <TokenAddressesPanel tokenAddressesOnChain={admin.tokenAddressesOnChain} onUpdated={admin.refetch} />
+      <FeesPanel feesWalletAddress={admin.feesWalletAddress} feesAmount={admin.feesAmount} onUpdated={admin.refetch} />
       <OraclesPanel
         sanctionsOracleAddress={admin.sanctionsOracleAddress}
         mockSanctionsOracleAddress={admin.mockSanctionsOracleAddress}

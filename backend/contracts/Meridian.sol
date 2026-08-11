@@ -42,10 +42,12 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit ContainerPositionOracleAddressUpdated(_containerPositionOracle);
     }
 
-    // Appelée par notre propre backend (le cron qui interroge l'API
-    // VesselFinder), pas par le vendeur : voir le commentaire sur
-    // containerPositionOracleAddress dans InternalFunctions.sol. C'est la
-    // seule façon d'écrire containerPositionStatus.
+    // Appelée directement par le wallet oracle backend (dépense son propre
+    // gas) — voir le commentaire sur containerPositionOracleAddress dans
+    // InternalFunctions.sol. Utile en dev/admin (ContainerPositionOraclePanel)
+    // ; en usage normal c'est plutôt applySignedContainerPosition (via
+    // withdrawFundsWithPositionUpdate/rollbackDepositWithPositionUpdate) qui
+    // écrit containerPositionStatus, payé par l'utilisateur.
     function reportContainerPosition(bytes32 _transactionID, ContainerPositionStatus _status) external
     onlyContainerPositionOracle onlySignedTransaction(_transactionID) {
         TransactionsList[_transactionID].containerPositionStatus = _status;
@@ -82,6 +84,19 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
 
     function setNewOwner(address _newOwner) external onlyOwner {
         transferOwnership(_newOwner);
+    }
+
+    function setFeesWalletAddress(address _feesWalletAddress) external onlyOwner {
+        require(_feesWalletAddress != address(0), "Invalid fees wallet address");
+        feesWalletAddress = _feesWalletAddress;
+
+        emit FeesWalletAddressUpdated(_feesWalletAddress);
+    }
+
+    function setFeesAmount(uint128 _feesAmount) external onlyOwner {
+        feesAmount = _feesAmount;
+
+        emit FeesAmountUpdated(_feesAmount);
     }
 
     function initializeTransaction(TransactionDetailsInput calldata _details, string calldata _billNumber) external
@@ -242,8 +257,17 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
 
             _transaction.depositedAmount += _amountToDeposit;
             _transaction.pendingWithdrawalAmount += _amountToDeposit;
+            
             if (_transaction.depositedAmount >= _transaction.totalAmount) {
                 _transaction.depositCompleted = true;
+            }
+
+            if (!_transaction.feesPaid) {
+                require(feesWalletAddress != address(0), "Fees wallet address not configured");
+                _transaction.feesPaid = true;
+                _token.safeTransferFrom(_transaction.buyer.userAddress, feesWalletAddress, feesAmount);
+
+                emit FeesPaid(_transactionID, _transaction.buyer.userAddress, feesWalletAddress, feesAmount, _transaction.currency);
             }
 
             _token.safeTransferFrom(_transaction.buyer.userAddress, address(this), _amountToDeposit);

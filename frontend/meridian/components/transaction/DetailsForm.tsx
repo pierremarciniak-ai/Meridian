@@ -18,6 +18,7 @@ import type { OnChainTransaction } from "@/lib/domain/transaction";
 import { estimateAdvanceAmount, isCurrentEditor } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
+import { useFeesAmount } from "@/hooks/useFeesAmount";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
@@ -46,6 +47,7 @@ export function DetailsForm({
   const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[currency]);
   const { execute, stage, error, isSuccess } = useContractAction();
+  const { feesAmount } = useFeesAmount();
 
   useEffect(() => {
     // decimals vient de useErc20Meta (lecture on-chain asynchrone, 6 par
@@ -125,7 +127,14 @@ export function DetailsForm({
 
         <fieldset disabled={!myTurn} className="contents">
         {role === "seller" && (
-          <Field label="Référence conteneur">
+          <Field
+            label="Référence conteneur *"
+            error={
+              !containerReference
+                ? "Obligatoire pour la signature du dossier"
+                : undefined
+            }
+          >
             <input
               className="field-input font-mono-tight"
               value={containerReference}
@@ -173,7 +182,14 @@ export function DetailsForm({
         </Field>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label={`Montant total (${symbol || "…"})`}>
+          <Field
+            label={`Montant total (${symbol || "…"})`}
+            hint={
+              role === "buyer" && !tx.feesPaid && feesAmount > 0n
+                ? `+ ${formatAmount(feesAmount, decimals)} ${symbol} de frais de gestion, prélevés lors de votre premier dépôt.`
+                : undefined
+            }
+          >
             <input className="field-input" inputMode="decimal" value={totalAmountInput} onChange={(e) => setTotalAmountInput(e.target.value)} required />
           </Field>
           <Field

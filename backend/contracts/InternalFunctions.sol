@@ -65,6 +65,8 @@ abstract contract InternalFunctions is Ownable {
     // ≈ 7,9×10^28 : aucune limite réaliste pour un compteur de transactions.
     uint96 public internalID;
 
+    uint128 public feesAmount;
+
     enum WorkflowStatus {
         UnSet,
         TransactionInitialized,
@@ -131,6 +133,7 @@ abstract contract InternalFunctions is Ownable {
         UserType currentEditor;
         bool signedByBuyer;
         bool signedBySeller;
+        bool feesPaid;
         bool depositCompleted;
         bool partialWithdrawalCompleted;
         bool withdrawalCompleted;
@@ -203,13 +206,19 @@ abstract contract InternalFunctions is Ownable {
     address public mockSanctionsOracleAddress;
     // Adresse zéro = minting désactivé (checkSignatures ne fait alors rien).
     address public meridianNFTAddress;
-    // Adresse dédiée (contrôlée par le cron backend qui interroge l'API
+    // Adresse dédiée (contrôlée par notre backend qui interroge l'API
     // VesselFinder), distincte du owner : VesselFinder n'expose aucun oracle
-    // on-chain, donc c'est notre propre service qui pousse la donnée via
-    // reportContainerPosition. Ne jamais alimenter containerPositionStatus
-    // depuis un paramètre fourni par le vendeur (withdrawFunds) : il a
-    // intérêt à mentir pour débloquer les fonds plus tôt.
+    // on-chain, donc c'est notre propre service qui atteste la donnée —
+    // soit directement via reportContainerPosition (son propre wallet),
+    // soit via une signature hors-chaîne consommée par n'importe qui via
+    // applySignedContainerPosition (voir withdrawFundsWithPositionUpdate /
+    // rollbackDepositWithPositionUpdate dans Meridian.sol, le chemin normal
+    // : ce wallet ne dépense alors jamais de gas). Ne jamais alimenter
+    // containerPositionStatus depuis un paramètre fourni par le vendeur
+    // (withdrawFunds) : il a intérêt à mentir pour débloquer les fonds plus
+    // tôt.
     address public containerPositionOracleAddress;
+    address public feesWalletAddress;
 
     bool public mockSanctionsEnabled = true;
   
@@ -327,6 +336,9 @@ abstract contract InternalFunctions is Ownable {
     event ContainerPositionReported(bytes32 indexed transactionID, ContainerPositionStatus status);
     event BuyerIsNowEditor(bytes32 indexed transactionID);
     event SellerIsNowEditor(bytes32 indexed transactionID);
+    event FeesAmountUpdated(uint128 newFeesAmount);
+    event FeesPaid(bytes32 indexed transactionID, address indexed buyer, address feesWallet, uint amount, Currency currency);    
+    event FeesWalletAddressUpdated(address indexed newFeesWallet);
 
     error AddressIsSanctioned(address accountAddress);
 

@@ -6,12 +6,13 @@ const CURRENCY = { USDC: 0, USDT: 1, EURC: 2 };
 async function main() {
   const { ethers } = await network.getOrCreate();
 
-  const [deployer, buyer, seller, containerPositionOracle] = await ethers.getSigners();
+  const [deployer, buyer, seller, containerPositionOracle, feesWallet] = await ethers.getSigners();
 
   console.log("Deployer:", deployer.address);
   console.log("Buyer   :", buyer.address);
   console.log("Seller  :", seller.address);
   console.log("Container position oracle:", containerPositionOracle.address);
+  console.log("Fees wallet:", feesWallet.address);
 
   // --- 1. Déploiement des 3 mocks (6 décimales, comme les vrais USDC/USDT/EURC) ---
   const usdc = await ethers.deployContract("MockERC20", ["Mock USDC", "USDC", 6]);
@@ -68,10 +69,15 @@ async function main() {
 
   await meridian.setMeridianNFTAddress(await meridianNFT.getAddress());
 
-  // --- 7. Oracle de position de conteneur (backend cron VesselFinder) ---
+  // --- 7. Oracle de position de conteneur (backend VesselFinder) ---
   await meridian.setContainerPositionOracleAddress(containerPositionOracle.address);
 
-  console.log("\n--- Pour le cron container-position (frontend/meridian/.env.local) ---");
+  // --- 8. Configuration du wallet de frais (backend) ---
+  await meridian.setFeesWalletAddress(feesWallet.address);
+  await meridian.setFeesAmount(2000000); // 2000000 = 2 USDC/USDT/EURC (6 décimales)
+  console.log("Fees set: ", await meridian.feesAmount());
+
+  console.log("\n--- Pour l'attestation de position (frontend/meridian/.env.local) ---");
   console.log("CONTAINER_ORACLE_PRIVATE_KEY= (clé privée du compte #3 affichée au démarrage de `npx hardhat node`)");
   console.log("Adresse correspondante :", containerPositionOracle.address);
 }

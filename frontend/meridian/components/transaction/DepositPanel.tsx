@@ -11,6 +11,7 @@ import type { OnChainTransaction } from "@/lib/domain/transaction";
 import { estimateDepositAmount } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Allowance, useErc20Balance, useErc20Meta } from "@/hooks/useErc20";
+import { useFeesAmount } from "@/hooks/useFeesAmount";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { erc20Abi } from "@/lib/web3/abi/erc20";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
@@ -23,15 +24,25 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
   const { decimals, symbol } = useErc20Meta(tokenAddress);
   const balanceQuery = useErc20Balance(tokenAddress, address);
   const allowanceQuery = useErc20Allowance(tokenAddress, address, meridianAddress);
+  const { feesAmount } = useFeesAmount();
 
   const approveAction = useContractAction();
   const depositAction = useContractAction();
 
   const amountDue = estimateDepositAmount(tx);
+  // depositFunds prélève les frais de gestion en plus du dépôt lui-même,
+  // mais seulement au tout premier appel réussi (tx.feesPaid encore à
+  // false) — voir Meridian.sol. Il faut donc les inclure dans l'allowance
+  // à approuver et dans le montant réellement transféré par l'acheteur ce
+  // coup-ci, sans les compter sur les dépôts complémentaires suivants.
+  const isFirstDeposit = !tx.feesPaid;
+  const feesForThisDeposit = isFirstDeposit ? feesAmount : 0n;
+  const totalDue = amountDue + feesForThisDeposit;
+
   const allowance = (allowanceQuery.data as bigint | undefined) ?? 0n;
   const balance = (balanceQuery.data as bigint | undefined) ?? 0n;
-  const needsApproval = allowance < amountDue;
-  const insufficientBalance = balance < amountDue;
+  const needsApproval = allowance < totalDue;
+  const insufficientBalance = balance < totalDue;
 
   useEffect(() => {
     if (approveAction.isSuccess) allowanceQuery.refetch();
@@ -64,8 +75,18 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
 
       <div className="mb-4 flex flex-col gap-1 text-sm">
         <span className="text-muted">
-          Prochain versement dû : <span className="text-foam">{formatAmount(amountDue, decimals)} {currencyLabels[tx.currency]}</span>
+          Prochain versement à effectuer : <span className="text-foam">{formatAmount(amountDue, decimals)} {currencyLabels[tx.currency]}</span>
         </span>
+        {feesForThisDeposit > 0n && (
+          <span className="text-muted">
+            + Frais de gestion (1er dépôt) : <span className="text-foam">{formatAmount(feesForThisDeposit, decimals)} {symbol}</span>
+          </span>
+        )}
+        {feesForThisDeposit > 0n && (
+          <span className="text-foam">
+            Total à approuver et déposer : {formatAmount(totalDue, decimals)} {symbol}
+          </span>
+        )}
         <span className="text-subtle">
           Solde disponible : {formatAmount(balance, decimals)} {symbol}
         </span>
@@ -89,11 +110,12 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
                   address: tokenAddress,
                   abi: erc20Abi,
                   functionName: "approve",
-                  args: [meridianAddress, amountDue],
+                  args: [meridianAddress, totalDue],
                 })
               }
             >
-              Approuver {formatAmount(amountDue, decimals)} {symbol}
+              Approuver {formatAmount(totalDue, decimals)} {symbol}
+              {feesForThisDeposit > 0n ? " (dont frais de gestion)" : ""}
             </Button>
           </>
         ) : (
@@ -112,6 +134,7 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
               }
             >
               Déposer {formatAmount(amountDue, decimals)} {symbol}
+              {feesForThisDeposit > 0n ? ` + ${formatAmount(feesForThisDeposit, decimals)} ${symbol} de frais` : ""}
             </Button>
           </>
         )}

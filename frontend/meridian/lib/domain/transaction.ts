@@ -30,6 +30,11 @@ export type OnChainTransaction = {
   currentEditor: UserType;
   signedByBuyer: boolean;
   signedBySeller: boolean;
+  // Frais de gestion prélevés une seule fois, au tout premier depositFunds
+  // réussi de cette transaction (voir Meridian.sol) — montant courant lisible
+  // via useFeesAmount, pas stocké par transaction (donc pas re-déductible
+  // après coup si le tarif global a changé depuis).
+  feesPaid: boolean;
   depositCompleted: boolean;
   partialWithdrawalCompleted: boolean;
   withdrawalCompleted: boolean;
@@ -196,5 +201,16 @@ export function pendingActionReason(tx: OnChainTransaction, role: "buyer" | "sel
     return tx.workflowStatus === WorkflowStatus.Signed && canWithdraw(tx) ? "withdraw" : null;
   }
 
+  return null;
+}
+
+// Avancement du dépôt de l'acheteur — contrairement à pendingActionReason,
+// indépendant du rôle : la même information ("où en est-on du versement")
+// est utile aussi bien à l'acheteur qu'au fournisseur, donc pas de variante
+// par rôle ici. `null` = rien n'a encore été déposé.
+export function depositProgressStatus(tx: OnChainTransaction): "advance" | "full" | null {
+  if (tx.workflowStatus !== WorkflowStatus.Signed) return null;
+  if (tx.depositCompleted) return "full";
+  if (tx.advanceAmount > 0n && tx.depositedAmount >= tx.advanceAmount) return "advance";
   return null;
 }

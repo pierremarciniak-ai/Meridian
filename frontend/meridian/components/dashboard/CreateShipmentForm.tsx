@@ -24,6 +24,7 @@ import { dateInputToUnix, dateTimeInputToUnix, formatAmount, parseAmountInput, u
 import { estimateAdvanceAmount } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
+import { useFeesAmount } from "@/hooks/useFeesAmount";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
@@ -62,6 +63,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
   const tokenAddress = tokenAddresses[currency];
   const { decimals, symbol } = useErc20Meta(tokenAddress);
   const { execute, stage, error, receipt, isBusy } = useContractAction();
+  const { feesAmount } = useFeesAmount();
 
   useEffect(() => {
     // shortDeadline vient de useShortDeadlineMode, résolu de façon
@@ -222,7 +224,14 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
         )}
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label={`Montant total (${symbol || "…"})`}>
+          <Field
+            label={`Montant total (${symbol || "…"})`}
+            hint={
+              feesAmount > 0n
+                ? `+ ${formatAmount(feesAmount, decimals)} ${symbol} de frais de gestion, prélevés lors du premier dépôt.`
+                : undefined
+            }
+          >
             <input
               className="field-input"
               inputMode="decimal"

@@ -29,7 +29,7 @@ describe("Meridian", function () {
   async function deployFixture() {
     const { ethers } = await network.getOrCreate();
 
-    const [deployer, buyer, seller, other, containerPositionOracle] = await ethers.getSigners();
+    const [deployer, buyer, seller, other, containerPositionOracle, feesWallet] = await ethers.getSigners();
 
     const usdc = await ethers.deployContract("MockERC20", ["Mock USDC", "USDC", 6]);
     const usdt = await ethers.deployContract("MockERC20", ["Mock USDT", "USDT", 6]);
@@ -57,9 +57,17 @@ describe("Meridian", function () {
     const meridianNFT = await ethers.deployContract("MeridianNFT", [await meridian.getAddress()]);
     await meridian.setMeridianNFTAddress(await meridianNFT.getAddress());
 
-    // Adresse dédiée simulant le cron backend qui interroge VesselFinder :
-    // seule cette adresse peut appeler reportContainerPosition.
+    // Adresse dédiée simulant le backend qui interroge VesselFinder : seule
+    // cette adresse peut appeler reportContainerPosition, ou signer une
+    // attestation valide pour applySignedContainerPosition.
     await meridian.setContainerPositionOracleAddress(containerPositionOracle.address);
+
+    // feesWalletAddress est désormais obligatoire dès le premier depositFunds
+    // (require dédié) : sans ce câblage, tous les tests qui déposent des
+    // fonds échoueraient, y compris ceux qui ne testent pas les frais.
+    // feesAmount reste à 0 par défaut (valeur initiale du contrat) : les
+    // tests dédiés aux frais l'ajustent eux-mêmes via setFeesAmount.
+    await meridian.setFeesWalletAddress(feesWallet.address);
 
     const mintAmount = ethers.parseUnits("10000", 6);
     await usdc.mint(buyer.address, mintAmount);
@@ -80,6 +88,7 @@ describe("Meridian", function () {
       seller,
       other,
       containerPositionOracle,
+      feesWallet,
       mintAmount,
     };
   }
@@ -168,10 +177,12 @@ describe("Meridian", function () {
     return { transactionID, details, containerReference, totalAmount: details.totalAmount, billNumber };
   }
 
-  // Simule le cron backend qui interroge VesselFinder et fait remonter la
+  // Simule le backend qui interroge VesselFinder et fait remonter la
   // position on-chain via reportContainerPosition (seul containerPositionOracle
   // peut l'appeler — voir withdrawFunds, qui n'accepte plus ce statut en
-  // paramètre direct pour éviter qu'un vendeur ne se l'auto-déclare).
+  // paramètre direct pour éviter qu'un vendeur ne se l'auto-déclare). En usage
+  // normal c'est plutôt applySignedContainerPosition (testée séparément) qui
+  // écrit cette valeur, payée par l'utilisateur.
   async function reportAtDestination(ctx: Awaited<ReturnType<typeof deployFixture>>, transactionID: string) {
     const { meridian, containerPositionOracle } = ctx;
     await meridian
@@ -1398,6 +1409,154 @@ describe("Meridian", function () {
       expect(after.workflowStatus).to.equal(WorkflowStatus.Signed);
       expect(after.depositedAmount).to.equal(totalAmount);
       expect(after.depositCompleted).to.equal(true);
+    });
+  });
+
+  // =========================================================================
+  // Frais de gestion — setFeesWalletAddress / setFeesAmount / prélèvement au
+  // premier depositFunds
+  // =========================================================================
+  describe("Frais de gestion", function () {
+    describe("setFeesWalletAddress", function () {
+      it("permet au owner de configurer le wallet de frais", async function () {
+        const { meridian, feesWallet } = await deployFixture();
+        await expect(meridian.setFeesWalletAddress(feesWallet.address))
+          .to.emit(meridian, "FeesWalletAddressUpdated")
+          .withArgs(feesWallet.address);
+        expect(await meridian.feesWalletAddress()).to.equal(feesWallet.address);
+      });
+
+      it("refuse l'adresse zéro", async function () {
+        const { meridian } = await deployFixture();
+        await expect(meridian.setFeesWalletAddress(ZERO_ADDRESS)).to.be.revertedWith("Invalid fees wallet address");
+      });
+
+      it("refuse un appel par un compte non-owner", async function () {
+        const { meridian, other, feesWallet } = await deployFixture();
+        await expect(meridian.connect(other).setFeesWalletAddress(feesWallet.address))
+          .to.be.revertedWithCustomError(meridian, "OwnableUnauthorizedAccount")
+          .withArgs(other.address);
+      });
+    });
+
+    describe("setFeesAmount", function () {
+      it("permet au owner de configurer le montant des frais", async function () {
+        const { ethers, meridian } = await deployFixture();
+        const fee = ethers.parseUnits("2", 6);
+        await expect(meridian.setFeesAmount(fee)).to.emit(meridian, "FeesAmountUpdated").withArgs(fee);
+        expect(await meridian.feesAmount()).to.equal(fee);
+      });
+
+      it("refuse un appel par un compte non-owner", async function () {
+        const { ethers, meridian, other } = await deployFixture();
+        await expect(meridian.connect(other).setFeesAmount(ethers.parseUnits("2", 6)))
+          .to.be.revertedWithCustomError(meridian, "OwnableUnauthorizedAccount")
+          .withArgs(other.address);
+      });
+    });
+
+    describe("prélèvement au premier depositFunds", function () {
+      it("prélève les frais une seule fois, au tout premier dépôt", async function () {
+        const ctx = await deployFixture();
+        const { ethers, meridian, usdc, buyer, feesWallet } = ctx;
+        const fee = ethers.parseUnits("2", 6);
+        await meridian.setFeesAmount(fee);
+
+        const totalAmount = ethers.parseUnits("1000", 6);
+        const { transactionID } = await createAndSignTransaction(
+          ctx,
+          { transactionModel: TransactionModel.PartialLocked, advanceAmount: totalAmount, totalAmount },
+          "CONT-REF-001",
+          "BILL-FEES"
+        );
+        const advance = (totalAmount * 30n) / 100n;
+
+        // L'acheteur doit approuver le dépôt ET les frais : la somme des deux
+        // safeTransferFrom effectués par depositFunds sur le premier appel.
+        await usdc.connect(buyer).approve(await meridian.getAddress(), advance + fee);
+
+        const feesWalletBalanceBefore = await usdc.balanceOf(feesWallet.address);
+
+        await expect(meridian.connect(buyer).depositFunds(transactionID))
+          .to.emit(meridian, "FeesPaid")
+          .withArgs(transactionID, buyer.address, feesWallet.address, fee, Currency.USDC)
+          .and.to.emit(meridian, "FundsDeposited")
+          .withArgs(transactionID, buyer.address, advance, Currency.USDC);
+
+        expect((await usdc.balanceOf(feesWallet.address)) - feesWalletBalanceBefore).to.equal(fee);
+
+        const afterFirstDeposit = await meridian.getTransaction(transactionID);
+        expect(afterFirstDeposit.feesPaid).to.equal(true);
+        expect(afterFirstDeposit.depositedAmount).to.equal(advance);
+
+        // Second dépôt (le solde de totalAmount) : plus aucun prélèvement de
+        // frais, seule l'allowance du dépôt lui-même est nécessaire.
+        const remainder = totalAmount - advance;
+        await usdc.connect(buyer).approve(await meridian.getAddress(), remainder);
+
+        await expect(meridian.connect(buyer).depositFunds(transactionID))
+          .to.emit(meridian, "FundsDeposited")
+          .withArgs(transactionID, buyer.address, remainder, Currency.USDC)
+          .and.to.not.emit(meridian, "FeesPaid");
+
+        expect(await usdc.balanceOf(feesWallet.address)).to.equal(feesWalletBalanceBefore + fee);
+
+        const afterSecondDeposit = await meridian.getTransaction(transactionID);
+        expect(afterSecondDeposit.depositedAmount).to.equal(totalAmount);
+        expect(afterSecondDeposit.depositCompleted).to.equal(true);
+      });
+
+      it("refuse le dépôt si l'acheteur n'a pas approuvé assez pour couvrir dépôt + frais", async function () {
+        const ctx = await deployFixture();
+        const { ethers, meridian, usdc, buyer } = ctx;
+        const fee = ethers.parseUnits("2", 6);
+        await meridian.setFeesAmount(fee);
+
+        const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+          transactionModel: TransactionModel.FullLocked,
+        });
+
+        // N'approuve que le montant du dépôt, pas les frais en plus.
+        await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+
+        await expect(meridian.connect(buyer).depositFunds(transactionID)).to.be.revertedWithCustomError(
+          usdc,
+          "ERC20InsufficientAllowance"
+        );
+      });
+
+      it("refuse le dépôt si le wallet de frais n'est pas configuré", async function () {
+        const ctx = await deployFixture();
+        const { ethers, usdc, mockSanctionsOracle, sanctionsOracle, buyer, seller } = ctx;
+
+        // Nouveau contrat Meridian sans setFeesWalletAddress, mais avec tout
+        // le reste câblé pour atteindre depositFunds.
+        const freshMeridian = await ethers.deployContract("Meridian");
+        await freshMeridian.setMockSanctionsOracleAddress(await mockSanctionsOracle.getAddress());
+        await freshMeridian.setSanctionsOracleAddress(await sanctionsOracle.getAddress());
+        await freshMeridian.setTokenAddress(Currency.USDC, await usdc.getAddress());
+
+        const totalAmount = ethers.parseUnits("100", 6);
+        const cancellingDate = await futureDate(ethers);
+        const details = buildDetails(
+          { transactionModel: TransactionModel.FullLocked },
+          { totalAmount, transactionCancellingDate: cancellingDate }
+        );
+
+        const tx = await freshMeridian.connect(buyer).initializeTransaction(details, "BILL-NOFEESWALLET");
+        const transactionID = await extractTransactionID(freshMeridian, tx);
+
+        await freshMeridian.connect(seller).createTransaction(transactionID, "BILL-NOFEESWALLET");
+        await freshMeridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF", details);
+        await freshMeridian.connect(seller).signTransactionSeller(transactionID);
+        await freshMeridian.connect(buyer).signTransactionBuyer(transactionID);
+
+        await usdc.connect(buyer).approve(await freshMeridian.getAddress(), totalAmount);
+
+        await expect(freshMeridian.connect(buyer).depositFunds(transactionID)).to.be.revertedWith(
+          "Fees wallet address not configured"
+        );
+      });
     });
   });
 

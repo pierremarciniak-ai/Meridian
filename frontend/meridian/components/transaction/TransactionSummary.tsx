@@ -17,6 +17,7 @@ import { formatAmount, formatUnixDate } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
 import { isCurrentEditor, sameAddress } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
+import { useFeesAmount } from "@/hooks/useFeesAmount";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { meridianAddress } from "@/lib/web3/contracts";
 
@@ -64,6 +65,7 @@ export function TransactionSummary({
   onSigned: () => void;
 }) {
   const { execute, stage, error, isSuccess } = useContractAction();
+  const { feesAmount } = useFeesAmount();
 
   useEffect(() => {
     if (isSuccess) onSigned();
@@ -110,6 +112,17 @@ export function TransactionSummary({
           </Row>
           <Row label="Montant total">
             {formatAmount(tx.totalAmount, decimals)} {symbol}
+          </Row>
+          <Row label="Frais de gestion">
+            {tx.feesPaid ? (
+              <span className="flex items-center justify-end gap-1">
+                <CheckIcon className="h-3.5 w-3.5 text-accent" /> Payés
+              </span>
+            ) : (
+              <>
+                {formatAmount(feesAmount, decimals)} {symbol} · prélevés au 1er dépôt
+              </>
+            )}
           </Row>
           <Row label="Date d'expiration de la provision">{formatUnixDate(tx.transactionCancellingDate)}</Row>
         </div>
