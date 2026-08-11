@@ -4,14 +4,16 @@ import type { Address } from "viem";
 import { useReadContracts } from "wagmi";
 import { Currency } from "@/lib/domain/enums";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 // Lit les adresses de tokens (USDC/USDT/EURC) directement sur Meridian
 // plutôt que depuis l'env : modifiables on-chain via setTokenAddress (voir
 // TokenAddressesPanel), elles peuvent diverger silencieusement d'une valeur
 // figée au build — même raison que useMeridianNFTAddress (voir ce hook).
 export function useTokenAddresses() {
+  const meridianAddress = useMeridianAddress();
   const { data, isLoading, refetch } = useReadContracts({
+    query: { enabled: !!meridianAddress },
     contracts: [
       { address: meridianAddress, abi: meridianAbi, functionName: "tokenAddresses", args: [Currency.USDC] },
       { address: meridianAddress, abi: meridianAbi, functionName: "tokenAddresses", args: [Currency.USDT] },

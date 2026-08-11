@@ -10,7 +10,7 @@ import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 // rollbackDeposit est réservé à l'acheteur (onlyBuyer) et ne fait rien tant
 // que pendingWithdrawalAmount est déjà à 0 (voir canRollbackDeposit) : rien à
@@ -34,6 +34,7 @@ export function RollbackPanel({
   onRolledBack: () => void;
   refetchAttestation?: () => Promise<ContainerPositionAttestation | undefined>;
 }) {
+  const meridianAddress = useMeridianAddress();
   const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[tx.currency]);
   const { execute, stage, error, isBusy, isSuccess } = useContractAction();
@@ -44,6 +45,7 @@ export function RollbackPanel({
   }, [isSuccess]);
 
   async function handleRollback() {
+    if (!meridianAddress) return;
     const fresh = await refetchAttestation?.();
     if (fresh?.available) {
       await execute({

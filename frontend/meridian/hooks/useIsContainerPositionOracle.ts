@@ -2,15 +2,17 @@
 
 import { useAccount, useReadContract } from "wagmi";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 import { sameAddress } from "@/lib/domain/transaction";
 
 export function useIsContainerPositionOracle() {
   const { address } = useAccount();
+  const meridianAddress = useMeridianAddress();
   const { data: oracle, isLoading } = useReadContract({
     address: meridianAddress,
     abi: meridianAbi,
     functionName: "containerPositionOracleAddress",
+    query: { enabled: !!meridianAddress },
   });
 
   return {

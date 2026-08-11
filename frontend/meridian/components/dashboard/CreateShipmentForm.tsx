@@ -28,7 +28,7 @@ import { useFeesAmount } from "@/hooks/useFeesAmount";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 import { findEventArg } from "@/lib/web3/parseLogs";
 
 function tomorrowPlus(days: number) {
@@ -59,6 +59,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
   const [created, setCreated] = useState<{ id: `0x${string}`; billNumber: string } | null>(null);
   const [shortDeadline] = useShortDeadlineMode();
 
+  const meridianAddress = useMeridianAddress();
   const { tokenAddresses } = useTokenAddresses();
   const tokenAddress = tokenAddresses[currency];
   const { decimals, symbol } = useErc20Meta(tokenAddress);
@@ -104,7 +105,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (advanceTooHigh) return;
+    if (advanceTooHigh || !meridianAddress) return;
     const details = {
       currency,
       transactionCondition: condition,

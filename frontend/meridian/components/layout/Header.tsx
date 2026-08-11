@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import type { MouseEvent } from "react";
 import { useAccount } from "wagmi";
 import { CompassIcon } from "@/components/icons";
-import { hardhatLocal } from "@/lib/web3/chain";
+import { supportedChains } from "@/lib/web3/chain";
 import { useIsContainerPositionOracle } from "@/hooks/useIsContainerPositionOracle";
 import { useIsOwner } from "@/hooks/useIsOwner";
 
@@ -14,7 +14,10 @@ export function Header() {
   const { chainId, isConnected } = useAccount();
   const { isOwner } = useIsOwner();
   const { isContainerPositionOracle } = useIsContainerPositionOracle();
-  const onExpectedChain = !isConnected || chainId === hardhatLocal.id;
+  // Plusieurs réseaux sont désormais supportés simultanément (voir
+  // supportedChains) : "mauvais réseau" ne signifie plus "différent d'un
+  // seul réseau attendu", mais "aucun des réseaux supportés".
+  const onExpectedChain = !isConnected || supportedChains.some((chain) => chain.id === chainId);
   const pathname = usePathname();
 
   // Un <Link> vers la route déjà affichée ne déclenche aucune navigation

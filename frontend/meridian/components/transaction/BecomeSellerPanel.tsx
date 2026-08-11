@@ -8,10 +8,11 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
 import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 export function BecomeSellerPanel({ transactionId, expectedBillNumber, onAccepted }: { transactionId: `0x${string}`; expectedBillNumber: string; onAccepted: () => void }) {
   const { isConnected } = useAccount();
+  const meridianAddress = useMeridianAddress();
   const [billNumber, setBillNumber] = useState(expectedBillNumber);
   const { execute, stage, error, isSuccess } = useContractAction();
 
@@ -22,6 +23,7 @@ export function BecomeSellerPanel({ transactionId, expectedBillNumber, onAccepte
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (!meridianAddress) return;
     await execute({
       address: meridianAddress,
       abi: meridianAbi,

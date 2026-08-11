@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { formatAmount, parseAmountInput } from "@/lib/domain/format";
 import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 // Pendant de AddressSetterRow pour les onlyOwner qui remplacent un montant
 // (ex. setFeesAmount) plutôt qu'une adresse.
@@ -27,11 +27,12 @@ export function AmountSetterRow({
   functionName: string;
   onUpdated: () => void;
 }) {
+  const meridianAddress = useMeridianAddress();
   const [value, setValue] = useState("");
   const { execute, stage, error, isBusy, isSuccess } = useContractAction();
   const trimmed = value.trim();
   const parsed = parseAmountInput(trimmed, decimals);
-  const valid = trimmed !== "";
+  const valid = trimmed !== "" && !!meridianAddress;
 
   useEffect(() => {
     // Même raison que sur AddressSetterRow : on ne vide le champ qu'une fois
@@ -65,7 +66,7 @@ export function AmountSetterRow({
           variant="secondary"
           disabled={!valid}
           loading={isBusy}
-          onClick={() => execute({ address: meridianAddress, abi: meridianAbi, functionName, args: [parsed] })}
+          onClick={() => meridianAddress && execute({ address: meridianAddress, abi: meridianAbi, functionName, args: [parsed] })}
         >
           Mettre à jour
         </Button>

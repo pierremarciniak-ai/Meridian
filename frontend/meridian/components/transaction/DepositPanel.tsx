@@ -15,10 +15,11 @@ import { useFeesAmount } from "@/hooks/useFeesAmount";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { erc20Abi } from "@/lib/web3/abi/erc20";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId: `0x${string}`; tx: OnChainTransaction; onDeposited: () => void }) {
   const { address } = useAccount();
+  const meridianAddress = useMeridianAddress();
   const { tokenAddresses } = useTokenAddresses();
   const tokenAddress = tokenAddresses[tx.currency];
   const { decimals, symbol } = useErc20Meta(tokenAddress);
@@ -102,10 +103,11 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
             <TxStatusLine stage={approveAction.stage} error={approveAction.error} />
             <Button
               variant="secondary"
-              disabled={insufficientBalance || !tokenAddress}
+              disabled={insufficientBalance || !tokenAddress || !meridianAddress}
               loading={approveAction.isBusy}
               onClick={() =>
                 tokenAddress &&
+                meridianAddress &&
                 approveAction.execute({
                   address: tokenAddress,
                   abi: erc20Abi,
@@ -122,9 +124,10 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
           <>
             <TxStatusLine stage={depositAction.stage} error={depositAction.error} />
             <Button
-              disabled={insufficientBalance}
+              disabled={insufficientBalance || !meridianAddress}
               loading={depositAction.isBusy}
               onClick={() =>
+                meridianAddress &&
                 depositAction.execute({
                   address: meridianAddress,
                   abi: meridianAbi,

@@ -6,7 +6,7 @@ import { useReadContracts } from "wagmi";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
 import { useMyShipmentIds } from "@/hooks/useMyShipmentIds";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 export type Shipment = { id: Hex; tx: OnChainTransaction };
 
@@ -18,6 +18,7 @@ export type Shipment = { id: Hex; tx: OnChainTransaction };
 // d'autre.
 export function useMyShipments(account: Address | undefined) {
   const { ids, isLoading: idsLoading, error, refresh: refreshIds } = useMyShipmentIds(account);
+  const meridianAddress = useMeridianAddress();
 
   const { data, isLoading: txsLoading, refetch: refetchTxs } = useReadContracts({
     contracts: ids.map((id) => ({
@@ -26,7 +27,7 @@ export function useMyShipments(account: Address | undefined) {
       functionName: "getTransaction",
       args: [id],
     })),
-    query: { enabled: ids.length > 0 },
+    query: { enabled: ids.length > 0 && !!meridianAddress },
   });
 
   const shipments: Shipment[] = ids.flatMap((id, index) => {

@@ -13,7 +13,7 @@ import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 // Le statut on-chain (tx.containerPositionStatus) n'est plus tenu à jour par
 // un cron : on interroge en direct une attestation signée par l'oracle
@@ -24,6 +24,7 @@ import { meridianAddress } from "@/lib/web3/contracts";
 // se font en un seul appel, payé par le vendeur — le wallet oracle backend
 // ne dépense jamais de gas.
 export function WithdrawPanel({ transactionId, tx, onWithdrawn }: { transactionId: `0x${string}`; tx: OnChainTransaction; onWithdrawn: () => void }) {
+  const meridianAddress = useMeridianAddress();
   const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[tx.currency]);
   const { execute, stage, error, isBusy, isSuccess } = useContractAction();
@@ -39,6 +40,7 @@ export function WithdrawPanel({ transactionId, tx, onWithdrawn }: { transactionI
   const containerConditionMet = isContainerPositionSufficientForWithdrawal(tx, livePosition);
 
   async function handleWithdraw() {
+    if (!meridianAddress) return;
     // On revérifie juste avant d'envoyer plutôt que de réutiliser
     // l'attestation affichée à l'écran, qui peut dater de plusieurs minutes
     // (deadline de 10 min côté API) et n'être plus valable au moment du clic.

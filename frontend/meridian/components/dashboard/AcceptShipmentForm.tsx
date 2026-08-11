@@ -10,7 +10,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
 import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 const TRANSACTION_ID_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
@@ -21,6 +21,7 @@ const TRANSACTION_ID_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 export function AcceptShipmentForm() {
   const router = useRouter();
   const { isConnected } = useAccount();
+  const meridianAddress = useMeridianAddress();
   const [transactionId, setTransactionId] = useState("");
   const [billNumber, setBillNumber] = useState("");
   const [idError, setIdError] = useState<string | null>(null);
@@ -41,6 +42,7 @@ export function AcceptShipmentForm() {
       setIdError("Identifiant invalide : attendu un hash de 32 octets (0x + 64 caractères hexadécimaux).");
       return;
     }
+    if (!meridianAddress) return;
     setIdError(null);
     await execute({
       address: meridianAddress,

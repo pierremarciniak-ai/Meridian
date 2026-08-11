@@ -10,7 +10,7 @@ import { ContainerPositionStatus, containerPositionStatusLabels } from "@/lib/do
 import type { OnChainTransaction } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 // Réservé au wallet configuré comme containerPositionOracleAddress (voir
 // useIsContainerPositionOracle) : c'est un appel normal à une fonction déjà
@@ -26,6 +26,7 @@ export function ContainerPositionOraclePanel({
   tx: OnChainTransaction;
   onReported: () => void;
 }) {
+  const meridianAddress = useMeridianAddress();
   const [status, setStatus] = useState<ContainerPositionStatus>(tx.containerPositionStatus);
   const { execute, stage, error, isBusy, isSuccess } = useContractAction();
 
@@ -63,7 +64,9 @@ export function ContainerPositionOraclePanel({
         <Button
           variant="secondary"
           loading={isBusy}
+          disabled={!meridianAddress}
           onClick={() =>
+            meridianAddress &&
             execute({
               address: meridianAddress,
               abi: meridianAbi,

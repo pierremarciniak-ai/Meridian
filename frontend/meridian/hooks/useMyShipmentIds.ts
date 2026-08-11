@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { Address, Hex } from "viem";
 import { usePublicClient } from "wagmi";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress, useMeridianDeployBlock } from "@/lib/web3/contracts";
+import { getContractEventsChunked } from "@/lib/web3/eventLogs";
 
 // Le contrat n'expose aucune fonction d'énumération des transactions : un
 // transactionID (bytes32) n'est retrouvable qu'en le connaissant déjà, ou en
@@ -12,34 +13,37 @@ import { meridianAddress } from "@/lib/web3/contracts";
 // acheteur (TransactionInitialized) ou fournisseur (TransactionCreated).
 export function useMyShipmentIds(account: Address | undefined) {
   const publicClient = usePublicClient();
+  const meridianAddress = useMeridianAddress();
+  const deployBlock = useMeridianDeployBlock();
   const [ids, setIds] = useState<Hex[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!publicClient || !account) {
+    if (!publicClient || !account || !meridianAddress) {
       setIds([]);
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
+      const latest = await publicClient.getBlockNumber();
       const [asBuyer, asSeller] = await Promise.all([
-        publicClient.getContractEvents({
+        getContractEventsChunked(publicClient, {
           address: meridianAddress,
           abi: meridianAbi,
           eventName: "TransactionInitialized",
           args: { buyer: account },
-          fromBlock: 0n,
-          toBlock: "latest",
+          fromBlock: deployBlock,
+          toBlock: latest,
         }),
-        publicClient.getContractEvents({
+        getContractEventsChunked(publicClient, {
           address: meridianAddress,
           abi: meridianAbi,
           eventName: "TransactionCreated",
           args: { seller: account },
-          fromBlock: 0n,
-          toBlock: "latest",
+          fromBlock: deployBlock,
+          toBlock: latest,
         }),
       ]);
 
@@ -58,11 +62,11 @@ export function useMyShipmentIds(account: Address | undefined) {
       // affiche un état vide + message plutôt que de laisser l'erreur réseau
       // remonter comme une rejection non gérée.
       setIds([]);
-      setError("Impossible de joindre le nœud Hardhat local (http://127.0.0.1:8545). Vérifiez qu'il est démarré.");
+      setError("Impossible de joindre le nœud RPC du réseau connecté. Vérifiez qu'il est démarré/accessible.");
     } finally {
       setIsLoading(false);
     }
-  }, [publicClient, account]);
+  }, [publicClient, account, meridianAddress, deployBlock]);
 
   useEffect(() => {
     // load() rejoue des logs on-chain (système externe, asynchrone) et

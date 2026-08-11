@@ -14,7 +14,7 @@ import { useMeridianNFTAddress } from "@/hooks/useMeridianNFTAddress";
 import { useNftTokenId, useNftTokenUri } from "@/hooks/useNftReceipt";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 // Les attributs "date" et "montant" du JSON on-chain sont bruts (timestamp
 // Unix, montant sans division par les decimals — voir buildTokenURI dans
@@ -52,6 +52,7 @@ export function NftMintPanel({
   role: "buyer" | "seller";
   onMinted: () => void;
 }) {
+  const meridianAddress = useMeridianAddress();
   const { execute, stage, error, isBusy, isSuccess } = useContractAction();
 
   useEffect(() => {
@@ -114,7 +115,9 @@ export function NftMintPanel({
             variant="secondary"
             className="mt-2"
             loading={isBusy}
+            disabled={!meridianAddress}
             onClick={() =>
+              meridianAddress &&
               execute({
                 address: meridianAddress,
                 abi: meridianAbi,

@@ -19,7 +19,7 @@ import { isCurrentEditor, sameAddress } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useFeesAmount } from "@/hooks/useFeesAmount";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -66,6 +66,7 @@ export function TransactionSummary({
 }) {
   const { execute, stage, error, isSuccess } = useContractAction();
   const { feesAmount } = useFeesAmount();
+  const meridianAddress = useMeridianAddress();
 
   useEffect(() => {
     if (isSuccess) onSigned();
@@ -77,6 +78,7 @@ export function TransactionSummary({
   const myTurn = isCurrentEditor(tx, role);
 
   async function handleSign() {
+    if (!meridianAddress) return;
     await execute({
       address: meridianAddress,
       abi: meridianAbi,

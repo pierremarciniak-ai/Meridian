@@ -5,7 +5,7 @@ import { TxStatusLine } from "@/components/TxStatusLine";
 import { Button } from "@/components/ui/Button";
 import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 export function ToggleRow({
   label,
@@ -20,6 +20,7 @@ export function ToggleRow({
   functionName: string;
   onUpdated: () => void;
 }) {
+  const meridianAddress = useMeridianAddress();
   const { execute, stage, error, isBusy, isSuccess } = useContractAction();
 
   useEffect(() => {
@@ -37,8 +38,8 @@ export function ToggleRow({
         <Button
           variant={value ? "brass" : "secondary"}
           loading={isBusy}
-          disabled={value === undefined}
-          onClick={() => execute({ address: meridianAddress, abi: meridianAbi, functionName, args: [!value] })}
+          disabled={value === undefined || !meridianAddress}
+          onClick={() => meridianAddress && execute({ address: meridianAddress, abi: meridianAbi, functionName, args: [!value] })}
         >
           {value ? "Activé" : "Désactivé"}
         </Button>

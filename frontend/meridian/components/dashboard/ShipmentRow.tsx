@@ -19,7 +19,7 @@ import { useErc20Meta } from "@/hooks/useErc20";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 
 const actionLabels = {
-  deposit: "Dépôt à faire",
+  deposit: "En attente de dépôt",
   rollback: "Retrait disponible",
   withdraw: "Retrait disponible",
 } as const;
@@ -46,13 +46,25 @@ export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
   const actionReason = pendingActionReason(tx, roleKey);
   const overdue = tx.workflowStatus === WorkflowStatus.Signed && isTransactionOverdue(tx);
   const awaitingSignature = tx.workflowStatus === WorkflowStatus.Created;
+  const myTurnToSign = awaitingSignature && isCurrentEditor(tx, roleKey);
   const depositProgress = depositProgressStatus(tx);
+  // Même calcul que pendingCount dans MyShipmentsList (bulle "N dossier(s)
+  // nécessite(nt) une action...") : actionReason seul ne couvre pas le cas
+  // "en attente de ma signature" (dossier encore en Created), à additionner
+  // pour que la bordure corresponde exactement à ce que compte le bandeau.
+  const needsMyAction = !!actionReason || myTurnToSign;
 
   return (
     <Link
       href={`/transaction/${id}`}
       className="flex items-center justify-between gap-4 rounded-lg px-4 py-3.5 transition-colors"
-      style={{ background: "var(--color-navy-850)", border: "1px solid var(--color-navy-700)" }}
+      style={{
+        background: "var(--color-navy-850)",
+        // Même ton que .action-banner (bulle "N dossier(s) nécessite(nt)
+        // une action...") : permet de repérer visuellement, dans la liste,
+        // les dossiers concernés sans avoir à lire chaque bulle.
+        border: needsMyAction ? "1px solid rgba(217, 165, 102, 0.5)" : "1px solid var(--color-navy-700)",
+      }}
     >
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-center gap-2">

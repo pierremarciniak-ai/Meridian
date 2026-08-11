@@ -8,13 +8,14 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
 import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 
 // isExempt court-circuite checkSanction (InternalFunctions.sol) : une adresse
 // exemptée n'est jamais interrogée auprès de l'oracle de sanctions.
 export function ExemptListPanel() {
+  const meridianAddress = useMeridianAddress();
   const [address, setAddress] = useState("");
   const trimmed = address.trim();
   const valid = ADDRESS_PATTERN.test(trimmed);
@@ -25,7 +26,7 @@ export function ExemptListPanel() {
     abi: meridianAbi,
     functionName: "isExempt",
     args: valid ? [trimmed as `0x${string}`] : undefined,
-    query: { enabled: valid },
+    query: { enabled: valid && !!meridianAddress },
   });
 
   useEffect(() => {
@@ -51,17 +52,17 @@ export function ExemptListPanel() {
       <div className="mt-3 flex gap-2">
         <Button
           variant="secondary"
-          disabled={!valid}
+          disabled={!valid || !meridianAddress}
           loading={isBusy}
-          onClick={() => execute({ address: meridianAddress, abi: meridianAbi, functionName: "addExemptAddress", args: [trimmed] })}
+          onClick={() => meridianAddress && execute({ address: meridianAddress, abi: meridianAbi, functionName: "addExemptAddress", args: [trimmed] })}
         >
           Exempter
         </Button>
         <Button
           variant="danger"
-          disabled={!valid}
+          disabled={!valid || !meridianAddress}
           loading={isBusy}
-          onClick={() => execute({ address: meridianAddress, abi: meridianAbi, functionName: "removeExemptAddress", args: [trimmed] })}
+          onClick={() => meridianAddress && execute({ address: meridianAddress, abi: meridianAbi, functionName: "removeExemptAddress", args: [trimmed] })}
         >
           Retirer l&apos;exemption
         </Button>

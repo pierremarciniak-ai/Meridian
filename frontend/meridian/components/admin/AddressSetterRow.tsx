@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { ZERO_ADDRESS } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 
@@ -30,10 +30,11 @@ export function AddressSetterRow({
   extraArgs?: readonly unknown[];
   onUpdated: () => void;
 }) {
+  const meridianAddress = useMeridianAddress();
   const [value, setValue] = useState("");
   const { execute, stage, error, isBusy, isSuccess } = useContractAction();
   const trimmed = value.trim();
-  const valid = ADDRESS_PATTERN.test(trimmed);
+  const valid = ADDRESS_PATTERN.test(trimmed) && !!meridianAddress;
   const isUnset = !currentValue || currentValue.toLowerCase() === ZERO_ADDRESS;
 
   useEffect(() => {
@@ -68,6 +69,7 @@ export function AddressSetterRow({
           disabled={!valid}
           loading={isBusy}
           onClick={() =>
+            meridianAddress &&
             execute({
               address: meridianAddress,
               abi: meridianAbi,

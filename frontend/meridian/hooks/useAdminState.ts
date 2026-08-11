@@ -2,13 +2,15 @@
 
 import { useReadContracts } from "wagmi";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 import { Currency } from "@/lib/domain/enums";
 
 // Un seul multicall pour tout l'état "réglages" du contrat consommé par le
 // dashboard admin, plutôt qu'un useReadContract par valeur.
 export function useAdminState() {
+  const meridianAddress = useMeridianAddress();
   const { data, isLoading, refetch } = useReadContracts({
+    query: { enabled: !!meridianAddress },
     contracts: [
       { address: meridianAddress, abi: meridianAbi, functionName: "owner" },
       { address: meridianAddress, abi: meridianAbi, functionName: "sanctionsOracleAddress" },

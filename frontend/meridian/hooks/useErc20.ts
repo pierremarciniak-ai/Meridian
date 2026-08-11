@@ -34,12 +34,12 @@ export function useErc20Balance(tokenAddress: Address | undefined, account: Addr
   });
 }
 
-export function useErc20Allowance(tokenAddress: Address | undefined, owner: Address | undefined, spender: Address) {
+export function useErc20Allowance(tokenAddress: Address | undefined, owner: Address | undefined, spender: Address | undefined) {
   return useReadContract({
     address: tokenAddress,
     abi: erc20Abi,
     functionName: "allowance",
-    args: owner ? [owner, spender] : undefined,
-    query: { enabled: !!tokenAddress && !!owner },
+    args: owner && spender ? [owner, spender] : undefined,
+    query: { enabled: !!tokenAddress && !!owner && !!spender },
   });
 }

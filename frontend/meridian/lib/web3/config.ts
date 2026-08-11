@@ -1,6 +1,6 @@
 import { cookieStorage, createStorage, type Config } from "wagmi";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
-import { hardhatLocal } from "@/lib/web3/chain";
+import { supportedChains } from "@/lib/web3/chain";
 
 export const reownProjectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ?? "";
 
@@ -11,7 +11,7 @@ export const reownProjectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID ?? "";
 // (https://cloud.reown.com) n'est pas renseignée dans NEXT_PUBLIC_REOWN_PROJECT_ID.
 const projectId = reownProjectId || "000000000000000000000000000000";
 
-export const networks = [hardhatLocal] as const;
+export const networks = supportedChains;
 
 export const wagmiAdapter = new WagmiAdapter({
   networks: [...networks],

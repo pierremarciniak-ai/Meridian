@@ -2,7 +2,7 @@
 
 import { useReadContract } from "wagmi";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 // Lit meridianNFTAddress directement sur la chaîne plutôt que de se fier à
 // NEXT_PUBLIC_MERIDIAN_NFT_ADDRESS (valeur figée au build) : owner peut
@@ -13,9 +13,11 @@ import { meridianAddress } from "@/lib/web3/contracts";
 // vérité que useAdminState pour ce champ, mais utilisable en dehors du
 // dashboard admin.
 export function useMeridianNFTAddress() {
+  const meridianAddress = useMeridianAddress();
   return useReadContract({
     address: meridianAddress,
     abi: meridianAbi,
     functionName: "meridianNFTAddress",
+    query: { enabled: !!meridianAddress },
   });
 }

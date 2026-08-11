@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useChainId } from "wagmi";
 import type { ContainerPositionStatus } from "@/lib/domain/enums";
 
 export type ContainerPositionAttestation =
@@ -13,6 +14,7 @@ export type ContainerPositionAttestation =
 // côté UI, et — au clic — à fournir les paramètres exacts attendus par
 // withdrawFundsWithPositionUpdate / rollbackDepositWithPositionUpdate.
 export function useContainerPositionAttestation(transactionId: `0x${string}` | undefined) {
+  const chainId = useChainId();
   const [data, setData] = useState<ContainerPositionAttestation | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -29,7 +31,10 @@ export function useContainerPositionAttestation(transactionId: `0x${string}` | u
       const res = await fetch("/api/container-position/sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transactionId }),
+        // La route (serveur) n'a pas de wallet connecté : chainId lui
+        // indique sur quel réseau résoudre l'adresse Meridian et la clé de
+        // l'oracle (voir NETWORK_CONFIG dans route.ts).
+        body: JSON.stringify({ transactionId, chainId }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -46,7 +51,7 @@ export function useContainerPositionAttestation(transactionId: `0x${string}` | u
     } finally {
       setIsLoading(false);
     }
-  }, [transactionId]);
+  }, [transactionId, chainId]);
 
   useEffect(() => {
     // refetch() est asynchrone (appel réseau) et n'appelle setData/setError

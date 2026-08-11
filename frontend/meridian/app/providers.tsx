@@ -20,6 +20,9 @@ if (typeof window !== "undefined") {
     adapters: [wagmiAdapter],
     projectId: reownProjectId || "000000000000000000000000000000",
     networks: [...networks],
+    // Juste une présélection dans le modal AppKit : le sélecteur de réseau
+    // du wallet expose bien tous les réseaux de `networks` (voir
+    // supportedChains dans lib/web3/chain.ts), pas seulement celui-ci.
     defaultNetwork: hardhatLocal,
     metadata: {
       name: "Meridian",

@@ -22,7 +22,7 @@ import { useFeesAmount } from "@/hooks/useFeesAmount";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 export function DetailsForm({
   transactionId,
@@ -44,6 +44,7 @@ export function DetailsForm({
   const [containerReference, setContainerReference] = useState(tx.containerReference);
   const [shortDeadline] = useShortDeadlineMode();
 
+  const meridianAddress = useMeridianAddress();
   const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[currency]);
   const { execute, stage, error, isSuccess } = useContractAction();
@@ -84,7 +85,7 @@ export function DetailsForm({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!myTurn) return;
+    if (!myTurn || !meridianAddress) return;
     const details = {
       currency,
       transactionCondition: condition,

@@ -9,12 +9,13 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
 import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
-import { meridianAddress } from "@/lib/web3/contracts";
+import { useMeridianAddress } from "@/lib/web3/contracts";
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const RENOUNCE_CONFIRM_WORD = "RENONCER";
 
 export function OwnerPanel({ owner, onUpdated }: { owner: `0x${string}` | undefined; onUpdated: () => void }) {
+  const meridianAddress = useMeridianAddress();
   const [newOwner, setNewOwner] = useState("");
   const transferAction = useContractAction();
   const validNewOwner = ADDRESS_PATTERN.test(newOwner.trim());
@@ -62,9 +63,10 @@ export function OwnerPanel({ owner, onUpdated }: { owner: `0x${string}` | undefi
           />
           <Button
             variant="secondary"
-            disabled={!validNewOwner}
+            disabled={!validNewOwner || !meridianAddress}
             loading={transferAction.isBusy}
             onClick={() => {
+              if (!meridianAddress) return;
               if (!window.confirm(`Transférer la propriété du contrat à ${newOwner.trim()} ? Cette action est irréversible depuis ce compte.`)) return;
               transferAction.execute({ address: meridianAddress, abi: meridianAbi, functionName: "setNewOwner", args: [newOwner.trim()] });
             }}
@@ -95,7 +97,7 @@ export function OwnerPanel({ owner, onUpdated }: { owner: `0x${string}` | undefi
           className="mt-3"
           disabled={renounceConfirm !== RENOUNCE_CONFIRM_WORD}
           loading={renounceAction.isBusy}
-          onClick={() => renounceAction.execute({ address: meridianAddress, abi: meridianAbi, functionName: "renounceOwnership" })}
+          onClick={() => meridianAddress && renounceAction.execute({ address: meridianAddress, abi: meridianAbi, functionName: "renounceOwnership" })}
         >
           Renoncer définitivement à la propriété
         </Button>
