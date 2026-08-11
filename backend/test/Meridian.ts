@@ -179,6 +179,26 @@ describe("Meridian", function () {
       .reportContainerPosition(transactionID, ContainerPositionStatus.AtDestination);
   }
 
+  // Signe une attestation de position hors-chaîne, exactement comme le ferait
+  // la route API (voir app/api/container-position/sign côté front) : hash
+  // packé (transactionID, status, deadline, adresse du contrat) puis
+  // personal_sign — doit correspondre bit à bit à
+  // applySignedContainerPosition (InternalFunctions.sol), qui reconstruit le
+  // même hash et vérifie via ECDSA.recover + toEthSignedMessageHash.
+  async function signContainerPosition(
+    ctx: Awaited<ReturnType<typeof deployFixture>>,
+    transactionID: string,
+    status: number,
+    deadline: number
+  ) {
+    const { ethers, meridian, containerPositionOracle } = ctx;
+    const messageHash = ethers.solidityPackedKeccak256(
+      ["bytes32", "uint8", "uint256", "address"],
+      [transactionID, status, deadline, await meridian.getAddress()]
+    );
+    return containerPositionOracle.signMessage(ethers.getBytes(messageHash));
+  }
+
   // Fait avancer le temps jusqu'après transactionCancellingDate.
   async function jumpPastCancellingDate(ethersLib: any, cancellingDate: bigint | number) {
     const latestBlock = await ethersLib.provider.getBlock("latest");
@@ -1391,7 +1411,7 @@ describe("Meridian", function () {
       const { transactionID } = await createAndSignTransaction(ctx);
 
       await expect(meridian.connect(seller).withdrawFunds(transactionID)).to.be.revertedWith(
-        "Nothing to withdraw"
+        "No pending amount to withdraw"
       );
     });
 
@@ -1872,6 +1892,149 @@ describe("Meridian", function () {
       await expect(meridian.connect(other).rollbackDeposit(transactionID)).to.be.revertedWith(
         "You're not the declared buyer"
       );
+    });
+  });
+
+  // =========================================================================
+  // withdrawFundsWithPositionUpdate / rollbackDepositWithPositionUpdate —
+  // applySignedContainerPosition : le wallet oracle ne fait que signer (hors
+  // chaîne, gratuit) ; c'est l'utilisateur (vendeur ou acheteur) qui envoie
+  // la transaction et paie le gas de la mise à jour on-chain.
+  // =========================================================================
+  describe("withdrawFundsWithPositionUpdate / rollbackDepositWithPositionUpdate", function () {
+    it("withdrawFundsWithPositionUpdate : applique l'attestation signée puis retire les fonds, en un seul appel", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, usdc, buyer, seller } = ctx;
+      // AtTheEndOfDelivery (défaut de buildDetails) : sans position reportée,
+      // withdrawFunds seul refuserait ("Container must be at destination").
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.FullLocked,
+      });
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await meridian.connect(buyer).depositFunds(transactionID);
+
+      const deadline = (await futureDate(ethers, 0)) + 600;
+      const signature = await signContainerPosition(ctx, transactionID, ContainerPositionStatus.AtDestination, deadline);
+
+      await expect(
+        meridian
+          .connect(seller)
+          .withdrawFundsWithPositionUpdate(transactionID, ContainerPositionStatus.AtDestination, deadline, signature)
+      )
+        .to.emit(meridian, "ContainerPositionReported")
+        .withArgs(transactionID, ContainerPositionStatus.AtDestination)
+        .and.to.emit(meridian, "FundsWithdrawn")
+        .withArgs(transactionID, seller.address, totalAmount, Currency.USDC);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.containerPositionStatus).to.equal(ContainerPositionStatus.AtDestination);
+      expect(stored.pendingWithdrawalAmount).to.equal(0);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Completed);
+    });
+
+    it("refuse une signature expirée", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, seller } = ctx;
+      const { transactionID } = await createAndSignTransaction(ctx);
+
+      const expiredDeadline = (await futureDate(ethers, 0)) - 10;
+      const signature = await signContainerPosition(
+        ctx,
+        transactionID,
+        ContainerPositionStatus.AtDestination,
+        expiredDeadline
+      );
+
+      await expect(
+        meridian
+          .connect(seller)
+          .withdrawFundsWithPositionUpdate(
+            transactionID,
+            ContainerPositionStatus.AtDestination,
+            expiredDeadline,
+            signature
+          )
+      ).to.be.revertedWith("Container position signature expired");
+    });
+
+    it("refuse une signature venant d'un autre compte que l'oracle configuré", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, seller, other } = ctx;
+      const { transactionID } = await createAndSignTransaction(ctx);
+
+      const deadline = (await futureDate(ethers, 0)) + 600;
+      const messageHash = ethers.solidityPackedKeccak256(
+        ["bytes32", "uint8", "uint256", "address"],
+        [transactionID, ContainerPositionStatus.AtDestination, deadline, await meridian.getAddress()]
+      );
+      const wrongSignature = await other.signMessage(ethers.getBytes(messageHash));
+
+      await expect(
+        meridian
+          .connect(seller)
+          .withdrawFundsWithPositionUpdate(transactionID, ContainerPositionStatus.AtDestination, deadline, wrongSignature)
+      ).to.be.revertedWith("Invalid container position signature");
+    });
+
+    it("refuse si le statut soumis ne correspond pas à celui réellement signé", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, seller } = ctx;
+      const { transactionID } = await createAndSignTransaction(ctx);
+
+      const deadline = (await futureDate(ethers, 0)) + 600;
+      // Signé pour InTransit, mais on soumet AtDestination : le hash
+      // reconstruit on-chain ne correspond plus à la signature.
+      const signature = await signContainerPosition(ctx, transactionID, ContainerPositionStatus.InTransit, deadline);
+
+      await expect(
+        meridian
+          .connect(seller)
+          .withdrawFundsWithPositionUpdate(transactionID, ContainerPositionStatus.AtDestination, deadline, signature)
+      ).to.be.revertedWith("Invalid container position signature");
+    });
+
+    it("rollbackDepositWithPositionUpdate : applique l'attestation signée puis rembourse l'acheteur", async function () {
+      const ctx = await deployFixture();
+      const { ethers, meridian, usdc, buyer, containerPositionOracle } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        transactionModel: TransactionModel.FullLocked,
+      });
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await meridian.connect(buyer).depositFunds(transactionID);
+
+      // Position réellement à AtDestination sur la chaîne : une fois
+      // l'échéance dépassée, un rollbackDeposit "nu" serait refusé (condition
+      // de livraison déjà remplie).
+      await meridian
+        .connect(containerPositionOracle)
+        .reportContainerPosition(transactionID, ContainerPositionStatus.AtDestination);
+
+      const stored = await meridian.getTransaction(transactionID);
+      await jumpPastCancellingDate(ethers, stored.transactionCancellingDate);
+
+      await expect(meridian.connect(buyer).rollbackDeposit(transactionID)).to.be.revertedWith(
+        "Transaction is not eligible for rollback"
+      );
+
+      // L'attestation signée fait revenir la position à InTransit : le
+      // rollback redevient éligible dans le même appel qui l'applique.
+      const deadline = (await futureDate(ethers, 0)) + 600;
+      const signature = await signContainerPosition(ctx, transactionID, ContainerPositionStatus.InTransit, deadline);
+
+      await expect(
+        meridian
+          .connect(buyer)
+          .rollbackDepositWithPositionUpdate(transactionID, ContainerPositionStatus.InTransit, deadline, signature)
+      )
+        .to.emit(meridian, "ContainerPositionReported")
+        .withArgs(transactionID, ContainerPositionStatus.InTransit)
+        .and.to.emit(meridian, "totalAmountRefunded")
+        .withArgs(transactionID, buyer.address, totalAmount, Currency.USDC);
+
+      const after = await meridian.getTransaction(transactionID);
+      expect(after.containerPositionStatus).to.equal(ContainerPositionStatus.InTransit);
+      expect(after.pendingWithdrawalAmount).to.equal(0);
+      expect(after.totalAmountRefunded).to.equal(true);
     });
   });
 

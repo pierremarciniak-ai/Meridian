@@ -253,61 +253,38 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
     }
 
     function withdrawFunds(bytes32 _transactionID) external nonReentrant onlySeller(_transactionID)
-    onlySignedTransaction(_transactionID) checkWithdrawalEligibility(_transactionID) {
-        Transaction storage _transaction = TransactionsList[_transactionID];
-        Currency _currency = _transaction.currency;
-
-        _transaction.sellerSanctioned = checkSanction(msg.sender);
-        _transaction.buyerSanctioned = checkSanction(_transaction.buyer.userAddress);
-
-        if (_transaction.sellerSanctioned || _transaction.buyerSanctioned) {
-            _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
-
-            emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
-        } else {
-            IERC20 _token = tokenAddresses[_currency];
-            require(address(_token) != address(0), "Token address not configured for this currency");
-
-            uint128 _amountToWithdraw = _transaction.pendingWithdrawalAmount;
-            _transaction.pendingWithdrawalAmount = 0;
-            _transaction.partialWithdrawalCompleted = true;
-
-            _token.safeTransfer(_transaction.seller.userAddress, _amountToWithdraw);
-
-            emit FundsWithdrawn(_transactionID, _transaction.seller.userAddress, _amountToWithdraw, _transaction.currency);
-
-            if (_transaction.pendingWithdrawalAmount == 0 && _transaction.depositCompleted) {
-                _transaction.workflowStatus = WorkflowStatus.TransactionCompleted;
-                _transaction.withdrawalCompleted = true;
-
-                emit TransactionCompleted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
-            }
-        }
+    onlySignedTransaction(_transactionID) {
+        withdrawFundsCore(_transactionID);
     }
 
-    function rollbackDeposit(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID) checkRollbackEligibility(_transactionID) {//onlyAbortedTransaction(_transactionID) {
-        Transaction storage _transaction = TransactionsList[_transactionID];
-        uint128 _refundAmount = _transaction.pendingWithdrawalAmount;
+    // Variante payée par le vendeur : applique d'abord une attestation de
+    // position signée par l'oracle (voir applySignedContainerPosition dans
+    // InternalFunctions.sol) puis enchaîne sur le même retrait que
+    // withdrawFunds — une seule transaction, un seul wallet à signer côté
+    // utilisateur, et le wallet oracle backend ne dépense jamais de gas.
+    function withdrawFundsWithPositionUpdate(
+        bytes32 _transactionID,
+        ContainerPositionStatus _status,
+        uint256 _deadline,
+        bytes calldata _signature
+    ) external nonReentrant onlySeller(_transactionID) onlySignedTransaction(_transactionID) {
+        applySignedContainerPosition(_transactionID, _status, _deadline, _signature);
+        withdrawFundsCore(_transactionID);
+    }
 
-        //require(_refundAmount > 0, "No funds to rollback");
+    function rollbackDeposit(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID) {
+        rollbackDepositCore(_transactionID);
+    }
 
-        IERC20 _token = tokenAddresses[_transaction.currency];
-        require(address(_token) != address(0), "Token address not configured for this currency");
-
-        _transaction.depositedAmount -= _transaction.pendingWithdrawalAmount;
-        _transaction.pendingWithdrawalAmount = 0;
-        _transaction.refundAmount = _refundAmount;
-
-        _token.safeTransfer(_transaction.buyer.userAddress, _refundAmount);
-
-        if (_transaction.totalAmount > _refundAmount) {
-            _transaction.partialAmountRefunded = true;
-            emit partialAmountRefunded(_transactionID, _transaction.buyer.userAddress, _refundAmount, _transaction.currency);
-        } else {
-            _transaction.totalAmountRefunded = true;
-            emit totalAmountRefunded(_transactionID, _transaction.buyer.userAddress, _refundAmount, _transaction.currency);
-        }
-
+    // Équivalent de withdrawFundsWithPositionUpdate côté acheteur.
+    function rollbackDepositWithPositionUpdate(
+        bytes32 _transactionID,
+        ContainerPositionStatus _status,
+        uint256 _deadline,
+        bytes calldata _signature
+    ) external nonReentrant onlyBuyer(_transactionID) {
+        applySignedContainerPosition(_transactionID, _status, _deadline, _signature);
+        rollbackDepositCore(_transactionID);
     }
 
     function getTransaction(bytes32 _transactionID) external view returns (Transaction memory) {

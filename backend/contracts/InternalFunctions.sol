@@ -4,7 +4,10 @@ pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 interface ISanctionsList {
     function isSanctioned(address addr) external view returns (bool);
@@ -48,6 +51,13 @@ interface IMeridianNFT {
 // contrat n'a pas vocation à être déployé seul (pas de fonctions externes).
 abstract contract InternalFunctions is Ownable {
     using SafeCast for uint256;
+    // Redéclaré ici pour la même raison que SafeCast ci-dessus : un
+    // "using ... for" ne s'hérite pas, et applySignedContainerPosition /
+    // withdrawFundsCore / rollbackDepositCore (dans ce fichier) en ont
+    // besoin directement, pas seulement Meridian.sol.
+    using SafeERC20 for IERC20;
+    using MessageHashUtils for bytes32;
+    using ECDSA for bytes32;
 
     // uint96 (et non uint256) pour que ce compteur se packe avec le
     // _owner (address, 20 bytes) hérité d'Ownable dans le même slot de
@@ -250,27 +260,15 @@ abstract contract InternalFunctions is Ownable {
     //     _;
     // }
 
-    modifier checkWithdrawalEligibility(bytes32 _transactionID) {
-        Transaction storage _transaction = TransactionsList[_transactionID];
-
-        require(_transaction.withdrawalCompleted == false, "Withdrawal already completed");
-        require(_transaction.pendingWithdrawalAmount > 0, "No pending amount to withdraw");
-
-        if (_transaction.advancePaymentMode == AdvancePaymentMode.Deferred || _transaction.partialWithdrawalCompleted) {
-            if (_transaction.transactionCondition == TransactionCondition.AtTheBeginningOfDelivery) {
-                require(_transaction.containerPositionStatus == ContainerPositionStatus.InTransit ||
-                _transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be in transit or at destination for withdrawal");
-            } else if (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery) {
-                require(_transaction.containerPositionStatus == ContainerPositionStatus.AtDestination, "Container must be at destination for withdrawal");
-            }
-        }
-        _;
-    }
-
-    modifier checkRollbackEligibility(bytes32 _transactionID) {
-        require(rollbackEligibilityStatus(_transactionID), "Transaction is not eligible for rollback");
-        _;
-    }
+    // checkWithdrawalEligibility et checkRollbackEligibility existaient ici
+    // comme modifiers ; remplacés par des appels directs à
+    // withdrawalEligibilityStatus / rollbackEligibilityStatus depuis
+    // withdrawFundsCore / rollbackDepositCore (voir plus bas) : ces deux
+    // actions ont désormais chacune deux points d'entrée externes
+    // (withdrawFunds/withdrawFundsWithPositionUpdate,
+    // rollbackDeposit/rollbackDepositWithPositionUpdate), et un modifier
+    // attaché à deux fonctions dupliquerait son bytecode à chaque site
+    // d'attache — un appel de fonction interne, non.
 
     // Contrairement aux autres modifiers, celui-ci ne fait volontairement PAS
     // de revert quand la condition échoue : un revert annulerait aussi le
@@ -549,7 +547,101 @@ abstract contract InternalFunctions is Ownable {
             }
         }
         return false;
-    } 
+    }
+
+    // Vérifie une attestation hors-chaîne signée par containerPositionOracleAddress
+    // (voir app/api/container-position/sign côté front/backend) et met à jour
+    // containerPositionStatus si elle est valide, avant que
+    // withdrawFundsCore/rollbackDepositCore ne s'exécutent avec la valeur
+    // fraîche. Objectif : l'oracle ne signe qu'un message (gratuit, hors
+    // chaîne) au lieu d'envoyer lui-même reportContainerPosition — c'est
+    // l'utilisateur (acheteur/vendeur), via withdrawFundsWithPositionUpdate /
+    // rollbackDepositWithPositionUpdate, qui paie le gas de la mise à jour.
+    // _deadline borne la durée de validité de la signature (anti-rejeu d'une
+    // vieille attestation), et address(this) lie la signature à ce contrat
+    // précis (anti-rejeu inter-contrats/inter-réseaux).
+    function applySignedContainerPosition(
+        bytes32 _transactionID,
+        ContainerPositionStatus _status,
+        uint256 _deadline,
+        bytes calldata _signature
+    ) internal {
+        require(block.timestamp <= _deadline, "Container position signature expired");
+
+        bytes32 _messageHash = keccak256(abi.encodePacked(_transactionID, _status, _deadline, address(this)));
+        address _signer = _messageHash.toEthSignedMessageHash().recover(_signature);
+
+        require(_signer == containerPositionOracleAddress, "Invalid container position signature");
+
+        TransactionsList[_transactionID].containerPositionStatus = _status;
+
+        emit ContainerPositionReported(_transactionID, _status);
+    }
+
+    // Logique partagée par withdrawFunds et withdrawFundsWithPositionUpdate —
+    // une fonction interne plutôt qu'un modifier commun aux deux, pour ne pas
+    // dupliquer ce corps à chaque site d'attache (voir la note plus haut sur
+    // l'ex-modifier checkWithdrawalEligibility).
+    function withdrawFundsCore(bytes32 _transactionID) internal {
+        withdrawalEligibilityStatus(_transactionID);
+
+        Transaction storage _transaction = TransactionsList[_transactionID];
+        Currency _currency = _transaction.currency;
+
+        _transaction.sellerSanctioned = checkSanction(msg.sender);
+        _transaction.buyerSanctioned = checkSanction(_transaction.buyer.userAddress);
+
+        if (_transaction.sellerSanctioned || _transaction.buyerSanctioned) {
+            _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
+
+            emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+        } else {
+            IERC20 _token = tokenAddresses[_currency];
+            require(address(_token) != address(0), "Token address not configured for this currency");
+
+            uint128 _amountToWithdraw = _transaction.pendingWithdrawalAmount;
+
+            _transaction.pendingWithdrawalAmount = 0;
+            _transaction.partialWithdrawalCompleted = true;
+
+            _token.safeTransfer(_transaction.seller.userAddress, _amountToWithdraw);
+
+            emit FundsWithdrawn(_transactionID, _transaction.seller.userAddress, _amountToWithdraw, _transaction.currency);
+
+            if (_transaction.pendingWithdrawalAmount == 0 && _transaction.depositCompleted) {
+                _transaction.workflowStatus = WorkflowStatus.TransactionCompleted;
+                _transaction.withdrawalCompleted = true;
+
+                emit TransactionCompleted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+            }
+        }
+    }
+
+    // Logique partagée par rollbackDeposit et rollbackDepositWithPositionUpdate
+    // — même raison que withdrawFundsCore ci-dessus.
+    function rollbackDepositCore(bytes32 _transactionID) internal {
+        require(rollbackEligibilityStatus(_transactionID), "Transaction is not eligible for rollback");
+
+        Transaction storage _transaction = TransactionsList[_transactionID];
+        uint128 _refundAmount = _transaction.pendingWithdrawalAmount;
+
+        IERC20 _token = tokenAddresses[_transaction.currency];
+        require(address(_token) != address(0), "Token address not configured for this currency");
+
+        _transaction.depositedAmount -= _transaction.pendingWithdrawalAmount;
+        _transaction.pendingWithdrawalAmount = 0;
+        _transaction.refundAmount = _refundAmount;
+
+        _token.safeTransfer(_transaction.buyer.userAddress, _refundAmount);
+
+        if (_transaction.totalAmount > _refundAmount) {
+            _transaction.partialAmountRefunded = true;
+            emit partialAmountRefunded(_transactionID, _transaction.buyer.userAddress, _refundAmount, _transaction.currency);
+        } else {
+            _transaction.totalAmountRefunded = true;
+            emit totalAmountRefunded(_transactionID, _transaction.buyer.userAddress, _refundAmount, _transaction.currency);
+        }
+    }
 
     function checkSanction(address _userAddress) internal returns (bool) {
         if (isExempt[_userAddress]) {

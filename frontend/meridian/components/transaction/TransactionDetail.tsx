@@ -27,6 +27,7 @@ import {
   sameAddress,
   transactionExists,
 } from "@/lib/domain/transaction";
+import { useContainerPositionAttestation } from "@/hooks/useContainerPositionAttestation";
 import { useErc20Meta } from "@/hooks/useErc20";
 import { useIsContainerPositionOracle } from "@/hooks/useIsContainerPositionOracle";
 import { useMeridianTransaction } from "@/hooks/useMeridianTransaction";
@@ -38,6 +39,16 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
   const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[tx ? tx.currency : Currency.USDC]);
   const { isContainerPositionOracle } = useIsContainerPositionOracle();
+  // Attestation de position à la volée (gratuite, sans écriture on-chain) :
+  // ne sert que dans l'état Signed, où l'éligibilité rollback/retrait dépend
+  // de containerPositionStatus. Une seule requête ici, partagée avec
+  // RollbackPanel (WithdrawPanel gère la sienne en interne, côté fournisseur
+  // le panneau est toujours affiché quel que soit l'état de la position).
+  const {
+    data: attestation,
+    refetch: refetchAttestation,
+  } = useContainerPositionAttestation(tx?.workflowStatus === WorkflowStatus.Signed ? id : undefined);
+  const livePosition = attestation?.available ? attestation.status : undefined;
 
   if (isLoading) {
     return (
@@ -136,13 +147,18 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
             <CardTitle>Date d&apos;expiration de la provision dépassée</CardTitle>
             <AlertIcon className="h-6 w-6 text-danger" />
           </CardHeader>
-          {isRollbackEligible(tx) ? (
+          {isRollbackEligible(tx, livePosition) ? (
             <>
               <p className="text-sm text-danger">
                 La date d&apos;expiration de ce dossier est dépassée. Son statut sera passé à « Abandonné » une fois
                 votre retrait effectué.
               </p>
-              <RollbackPanel transactionId={id} tx={tx} onRolledBack={() => refetch()} />
+              <RollbackPanel
+                transactionId={id}
+                tx={tx}
+                onRolledBack={() => refetch()}
+                refetchAttestation={refetchAttestation}
+              />
             </>
           ) : (
             <p className="text-sm text-danger">
@@ -155,7 +171,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       )}
       {tx.workflowStatus === WorkflowStatus.Signed &&
         role === "buyer" &&
-        !(isRollbackEligible(tx) && canRollbackDeposit(tx)) && (
+        !(isRollbackEligible(tx, livePosition) && canRollbackDeposit(tx)) && (
           <DepositPanel transactionId={id} tx={tx} onDeposited={() => refetch()} />
         )}
       {tx.workflowStatus === WorkflowStatus.Signed &&

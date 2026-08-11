@@ -116,15 +116,23 @@ export function estimateDepositAmount(tx: OnChainTransaction): bigint {
 // premier retrait : dès que partialWithdrawalCompleted est déjà à true (un
 // retrait a déjà eu lieu), le reliquat retombe sous la même condition que
 // Deferred — voir withdrawFunds dans Meridian.sol.
-export function isContainerPositionSufficientForWithdrawal(tx: OnChainTransaction): boolean {
+// `livePosition` permet d'évaluer la condition contre une position fraîche
+// (attestation signée par l'oracle, pas encore appliquée on-chain) plutôt
+// que la valeur potentiellement périmée stockée dans tx — voir
+// useContainerPositionAttestation / WithdrawPanel.
+export function isContainerPositionSufficientForWithdrawal(
+  tx: OnChainTransaction,
+  livePosition?: ContainerPositionStatus
+): boolean {
   if (tx.advancePaymentMode === AdvancePaymentMode.Immediate && !tx.partialWithdrawalCompleted) return true;
+  const containerPositionStatus = livePosition ?? tx.containerPositionStatus;
   if (tx.transactionCondition === TransactionCondition.AtTheBeginningOfDelivery) {
     return (
-      tx.containerPositionStatus === ContainerPositionStatus.InTransit ||
-      tx.containerPositionStatus === ContainerPositionStatus.AtDestination
+      containerPositionStatus === ContainerPositionStatus.InTransit ||
+      containerPositionStatus === ContainerPositionStatus.AtDestination
     );
   }
-  return tx.containerPositionStatus === ContainerPositionStatus.AtDestination;
+  return containerPositionStatus === ContainerPositionStatus.AtDestination;
 }
 
 // rollbackDeposit rembourse pendingWithdrawalAmount (pas depositedAmount,
@@ -158,13 +166,15 @@ export function isTransactionOverdue(tx: Pick<OnChainTransaction, "transactionCa
 // même une fois l'échéance dépassée — le retrait normal (withdrawFunds) est
 // alors la seule voie. Sans ce miroir, le bouton de rollback resterait
 // affiché côté acheteur dans des cas où l'appel on-chain reverterait.
-export function isRollbackEligible(tx: OnChainTransaction): boolean {
+// `livePosition` : même raison que sur isContainerPositionSufficientForWithdrawal.
+export function isRollbackEligible(tx: OnChainTransaction, livePosition?: ContainerPositionStatus): boolean {
   if (tx.workflowStatus === WorkflowStatus.Aborted) return true;
   if (!isTransactionOverdue(tx)) return false;
+  const containerPositionStatus = livePosition ?? tx.containerPositionStatus;
   if (tx.transactionCondition === TransactionCondition.AtTheBeginningOfDelivery) {
-    return tx.containerPositionStatus === ContainerPositionStatus.UnSet;
+    return containerPositionStatus === ContainerPositionStatus.UnSet;
   }
-  return tx.containerPositionStatus !== ContainerPositionStatus.AtDestination;
+  return containerPositionStatus !== ContainerPositionStatus.AtDestination;
 }
 
 // Reflète exactement les conditions d'affichage de DepositPanel/RollbackPanel

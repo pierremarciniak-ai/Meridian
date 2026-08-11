@@ -51,12 +51,12 @@ export const currencyLabels: Record<Currency, string> = {
 };
 
 export const workflowStatusLabels: Record<WorkflowStatus, string> = {
-  [WorkflowStatus.Unset]: "Inconnue",
-  [WorkflowStatus.Initialized]: "Initiée",
-  [WorkflowStatus.Created]: "Acceptée par le fournisseur",
-  [WorkflowStatus.Signed]: "Signée",
-  [WorkflowStatus.Finished]: "Livrée & soldée",
-  [WorkflowStatus.Aborted]: "Abandonnée",
+  [WorkflowStatus.Unset]: "Inconnu",
+  [WorkflowStatus.Initialized]: "Initié",
+  [WorkflowStatus.Created]: "Accepté par le fournisseur",
+  [WorkflowStatus.Signed]: "Signé",
+  [WorkflowStatus.Finished]: "Soldé",
+  [WorkflowStatus.Aborted]: "Abandonné",
 };
 
 export const transactionConditionLabels: Record<TransactionCondition, string> = {
@@ -90,6 +90,6 @@ export const userTypeLabels: Record<UserType, string> = {
 
 export const containerPositionStatusLabels: Record<ContainerPositionStatus, string> = {
   [ContainerPositionStatus.UnSet]: "Non renseignée",
-  [ContainerPositionStatus.InTransit]: "En transit",
-  [ContainerPositionStatus.AtDestination]: "Arrivée à destination",
+  [ContainerPositionStatus.InTransit]: "En cours de transport",
+  [ContainerPositionStatus.AtDestination]: "Arrivé à destination",
 };
