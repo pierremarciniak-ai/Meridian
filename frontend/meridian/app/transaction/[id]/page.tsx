@@ -15,9 +15,9 @@ export default async function TransactionPage({ params }: { params: Promise<{ id
         <Card className="text-center">
           <div className="flex flex-col items-center gap-3 py-6">
             <ContainerShipIcon className="h-8 w-8 text-subtle" />
-            <h1 className="text-lg font-semibold text-foam">Identifiant invalide</h1>
+            <h1 className="text-lg font-semibold text-foam">Référence de contrat invalide</h1>
             <p className="max-w-sm text-sm text-muted">
-              L&apos;identifiant de dossier doit être un hash de 32 octets (0x suivi de 64 caractères hexadécimaux).
+              La référence du contrat doit être un hash de 32 octets (0x suivi de 64 caractères hexadécimaux).
             </p>
             <Link href="/">
               <Button variant="secondary" className="mt-2">

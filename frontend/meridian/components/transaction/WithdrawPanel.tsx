@@ -86,10 +86,9 @@ export function WithdrawPanel({ transactionId, tx, onWithdrawn }: { transactionI
         <p className="text-sm text-subtle">
           Retrait bloqué : ce dossier exige{" "}
           {tx.transactionCondition === TransactionCondition.AtTheBeginningOfDelivery
-            ? "que le conteneur soit au moins en transit"
+            ? "que le conteneur soit parti"
             : "que le conteneur soit arrivé à destination"}{" "}
-          avant de pouvoir retirer les fonds. Position actuelle :{" "}
-          {containerPositionStatusLabels[livePosition ?? tx.containerPositionStatus].toLowerCase()}.
+          avant de pouvoir retirer les fonds.
           {tx.advancePaymentMode === AdvancePaymentMode.Immediate && tx.partialWithdrawalCompleted && (
             <> L&apos;acompte immédiat a déjà été retiré : le reliquat suit désormais les mêmes règles qu&apos;un paiement différé.</>
           )}

@@ -62,11 +62,13 @@ describe("Meridian", function () {
     // attestation valide pour applySignedContainerPosition.
     await meridian.setContainerPositionOracleAddress(containerPositionOracle.address);
 
-    // feesWalletAddress est désormais obligatoire dès le premier depositFunds
-    // (require dédié) : sans ce câblage, tous les tests qui déposent des
-    // fonds échoueraient, y compris ceux qui ne testent pas les frais.
-    // feesAmount reste à 0 par défaut (valeur initiale du contrat) : les
-    // tests dédiés aux frais l'ajustent eux-mêmes via setFeesAmount.
+    // feesWalletAddress est requis dès qu'une signature complète déclenche un
+    // prélèvement de frais non nul (require dédié dans transfertFeesFromBuyer)
+    // : sans ce câblage, tout test dédié aux frais échouerait. feesRateBps
+    // reste à 0 par défaut (valeur initiale du contrat) : à ce taux, aucun
+    // prélèvement n'a lieu, donc tous les tests qui ne testent pas les frais
+    // ne sont pas affectés par ce câblage. Les tests dédiés ajustent
+    // feesRateBps eux-mêmes via setFeesRateBps.
     await meridian.setFeesWalletAddress(feesWallet.address);
 
     const mintAmount = ethers.parseUnits("10000", 6);
@@ -173,6 +175,32 @@ describe("Meridian", function () {
 
     await meridian.connect(seller).signTransactionSeller(transactionID);
     await meridian.connect(buyer).signTransactionBuyer(transactionID);
+
+    return { transactionID, details, containerReference, totalAmount: details.totalAmount, billNumber };
+  }
+
+  // Même flow que createAndSignTransaction, arrêté juste avant la signature
+  // acheteur — nécessaire pour les tests de frais, qui doivent insérer un
+  // usdc.approve() entre les deux signatures. currentEditor démarre à Seller
+  // (initializeTransaction) et ne bascule vers Buyer qu'une fois le vendeur
+  // signé : le vendeur signe donc toujours EN PREMIER dans ce contrat, et
+  // c'est systématiquement la signature de l'acheteur (signTransactionBuyer)
+  // qui, en complétant les deux signatures, déclenche checkSignatures ->
+  // transfertFeesFromBuyer. Le prélèvement des frais se fait donc toujours
+  // dans la propre transaction de l'acheteur, jamais dans celle du vendeur —
+  // pas besoin de simuler un "vendeur signe en dernier", ce cas n'existe pas
+  // dans ce contrat.
+  async function createSignedBySellerOnly(
+    ctx: Awaited<ReturnType<typeof deployFixture>>,
+    detailsOverrides: Partial<any> = {},
+    containerReference = "CONT-REF-001",
+    billNumber = "BILL-SIGNED"
+  ) {
+    const { meridian, seller } = ctx;
+    const { transactionID, details } = await initAndCreate(ctx, billNumber, detailsOverrides, "1000");
+
+    await meridian.connect(seller).saveTransactionDetailsSeller(transactionID, containerReference, details);
+    await meridian.connect(seller).signTransactionSeller(transactionID);
 
     return { transactionID, details, containerReference, totalAmount: details.totalAmount, billNumber };
   }
@@ -348,55 +376,6 @@ describe("Meridian", function () {
   });
 
   // =========================================================================
-  // addExemptAddress / removeExemptAddress
-  // =========================================================================
-  describe("addExemptAddress / removeExemptAddress", function () {
-    it("permet à une adresse exemptée de contourner une sanction, jusqu'au retrait de l'exemption", async function () {
-      const ctx = await deployFixture();
-      const { ethers, meridian, mockSanctionsOracle, buyer } = ctx;
-
-      await mockSanctionsOracle.setSanctioned(buyer.address);
-
-      const totalAmount = ethers.parseUnits("100", 6);
-      const cancellingDate = await futureDate(ethers);
-      const details = buildDetails({}, { totalAmount, transactionCancellingDate: cancellingDate });
-
-      await expect(
-        meridian.connect(buyer).initializeTransaction(details, "BILL-EXEMPT-BEFORE")
-      ).to.be.revertedWithCustomError(meridian, "AddressIsSanctioned");
-
-      await expect(meridian.addExemptAddress(buyer.address))
-        .to.emit(meridian, "ExemptAddressAdded")
-        .withArgs(buyer.address);
-      expect(await meridian.isExempt(buyer.address)).to.equal(true);
-
-      await expect(meridian.connect(buyer).initializeTransaction(details, "BILL-EXEMPT-AFTER")).to.emit(
-        meridian,
-        "TransactionInitialized"
-      );
-
-      await expect(meridian.removeExemptAddress(buyer.address))
-        .to.emit(meridian, "ExemptAddressRemoved")
-        .withArgs(buyer.address);
-      expect(await meridian.isExempt(buyer.address)).to.equal(false);
-
-      await expect(
-        meridian.connect(buyer).initializeTransaction(details, "BILL-EXEMPT-REMOVED")
-      ).to.be.revertedWithCustomError(meridian, "AddressIsSanctioned");
-    });
-
-    it("refuse un appel par un compte non-owner", async function () {
-      const { meridian, other } = await deployFixture();
-      await expect(meridian.connect(other).addExemptAddress(other.address))
-        .to.be.revertedWithCustomError(meridian, "OwnableUnauthorizedAccount")
-        .withArgs(other.address);
-      await expect(meridian.connect(other).removeExemptAddress(other.address))
-        .to.be.revertedWithCustomError(meridian, "OwnableUnauthorizedAccount")
-        .withArgs(other.address);
-    });
-  });
-
-  // =========================================================================
   // setNewOwner
   // =========================================================================
   describe("setNewOwner", function () {
@@ -409,12 +388,15 @@ describe("Meridian", function () {
 
       expect(await meridian.owner()).to.equal(other.address);
 
-      await expect(meridian.connect(deployer).addExemptAddress(deployer.address))
+      // Vérifie que l'ancien owner a bien perdu la main et que le nouveau
+      // l'a récupérée, via un autre setter onlyOwner du contrat (l'exemption
+      // d'adresse a été retirée du contrat, voir InternalFunctions.sol).
+      await expect(meridian.connect(deployer).toggleMockSanctionsOracle(false))
         .to.be.revertedWithCustomError(meridian, "OwnableUnauthorizedAccount")
         .withArgs(deployer.address);
 
-      await meridian.connect(other).addExemptAddress(other.address);
-      expect(await meridian.isExempt(other.address)).to.equal(true);
+      await meridian.connect(other).toggleMockSanctionsOracle(false);
+      expect(await meridian.mockSanctionsEnabled()).to.equal(false);
     });
 
     it("refuse un appel par un compte non-owner", async function () {
@@ -545,23 +527,6 @@ describe("Meridian", function () {
       expect(stored.sellerSanctioned).to.equal(false);
       expect(stored.depositedAmount).to.equal(totalAmount);
       expect(stored.depositCompleted).to.equal(true);
-    });
-
-    it("une adresse exemptée n'interroge même pas l'oracle (donc reste exemptée qu'il soit cassé ou non)", async function () {
-      const ctx = await deployFixture();
-      const { ethers, meridian, mockSanctionsOracle, buyer } = ctx;
-
-      await meridian.addExemptAddress(buyer.address);
-      await mockSanctionsOracle.setBroken(true);
-
-      const totalAmount = ethers.parseUnits("100", 6);
-      const cancellingDate = await futureDate(ethers);
-      const details = buildDetails({}, { totalAmount, transactionCancellingDate: cancellingDate });
-
-      await expect(meridian.connect(buyer).initializeTransaction(details, "BILL-EXEMPT-ORACLE-DOWN")).to.emit(
-        meridian,
-        "TransactionInitialized"
-      );
     });
 
     it("(comportement réel documenté) si l'oracle configuré n'a pas de code du tout, le try/catch ne rattrape pas l'échec : la transaction revert au lieu de rester fail-open", async function () {
@@ -1161,17 +1126,42 @@ describe("Meridian", function () {
       ).to.be.revertedWith("Meridian NFT contract not configured");
     });
 
-    it("refuse tant que la transaction n'est pas Signed", async function () {
+    it("refuse tant que la transaction n'est ni Signed ni Completed", async function () {
       const ctx = await deployFixture();
       const { meridian, buyer, seller } = ctx;
       const { transactionID } = await initAndCreate(ctx, "BILL-NFT-NOTSIGNED");
 
       await expect(meridian.connect(buyer).mintTransactionNFTBuyer(transactionID)).to.be.revertedWith(
-        "Transaction is not signed"
+        "Transaction must be signed or completed"
       );
       await expect(meridian.connect(seller).mintTransactionNFTSeller(transactionID)).to.be.revertedWith(
-        "Transaction is not signed"
+        "Transaction must be signed or completed"
       );
+    });
+
+    // Le NFT est un reçu on-chain : il doit rester mintable même une fois le
+    // dossier soldé (TransactionCompleted), pas seulement pendant la fenêtre
+    // Signed — voir onlySignedOrCompletedTransaction dans InternalFunctions.sol.
+    it("permet de minter même une fois le dossier soldé (TransactionCompleted)", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, buyer, seller } = ctx;
+      const { transactionID, totalAmount } = await createAndSignTransaction(
+        ctx,
+        { transactionModel: TransactionModel.FullLocked },
+        "CONT-REF-001",
+        "BILL-NFT-COMPLETED"
+      );
+
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await meridian.connect(buyer).depositFunds(transactionID);
+      await reportAtDestination(ctx, transactionID);
+      await meridian.connect(seller).withdrawFunds(transactionID);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Completed);
+
+      await expect(meridian.connect(buyer).mintTransactionNFTBuyer(transactionID)).to.emit(meridian, "TransactionNFTMinted");
+      await expect(meridian.connect(seller).mintTransactionNFTSeller(transactionID)).to.emit(meridian, "TransactionNFTMinted");
     });
 
     it("refuse un second mint buyer une fois déjà minté", async function () {
@@ -1413,8 +1403,16 @@ describe("Meridian", function () {
   });
 
   // =========================================================================
-  // Frais de gestion — setFeesWalletAddress / setFeesAmount / prélèvement au
-  // premier depositFunds
+  // Frais de gestion — setFeesWalletAddress / setFeesRateBps / prélèvement à
+  // la signature complète (checkSignatures -> transfertFeesFromBuyer)
+  //
+  // Mécanique : l'acheteur paie 100% des frais (feesAmount = totalAmount *
+  // feesRateBps / 10000) en un virement séparé, dès que les deux signatures
+  // sont réunies — pas au dépôt. En contrepartie, il ne dépose ensuite que
+  // netAmountDue = totalAmount - feesAmount/2 (pas totalAmount) : le
+  // fournisseur reçoit donc mécaniquement moins que totalAmount au retrait,
+  // sans qu'aucune ligne de code ne déduise quoi que ce soit à la sortie —
+  // c'est ainsi qu'il "paie" sa moitié des frais.
   // =========================================================================
   describe("Frais de gestion", function () {
     describe("setFeesWalletAddress", function () {
@@ -1439,102 +1437,152 @@ describe("Meridian", function () {
       });
     });
 
-    describe("setFeesAmount", function () {
-      it("permet au owner de configurer le montant des frais", async function () {
-        const { ethers, meridian } = await deployFixture();
-        const fee = ethers.parseUnits("2", 6);
-        await expect(meridian.setFeesAmount(fee)).to.emit(meridian, "FeesAmountUpdated").withArgs(fee);
-        expect(await meridian.feesAmount()).to.equal(fee);
+    describe("setFeesRateBps", function () {
+      it("permet au owner de configurer le taux de frais (en points de base)", async function () {
+        const { meridian } = await deployFixture();
+        await expect(meridian.setFeesRateBps(500)).to.emit(meridian, "FeesRateBpsUpdated").withArgs(500);
+        expect(await meridian.feesRateBps()).to.equal(500);
       });
 
       it("refuse un appel par un compte non-owner", async function () {
-        const { ethers, meridian, other } = await deployFixture();
-        await expect(meridian.connect(other).setFeesAmount(ethers.parseUnits("2", 6)))
+        const { meridian, other } = await deployFixture();
+        await expect(meridian.connect(other).setFeesRateBps(500))
           .to.be.revertedWithCustomError(meridian, "OwnableUnauthorizedAccount")
           .withArgs(other.address);
       });
     });
 
-    describe("prélèvement au premier depositFunds", function () {
-      it("prélève les frais une seule fois, au tout premier dépôt", async function () {
+    describe("prélèvement à la signature complète", function () {
+      it("prélève 100% des frais chez l'acheteur dès la double signature, fige netAmountDue, et le fournisseur ne reçoit que ce montant réduit", async function () {
         const ctx = await deployFixture();
-        const { ethers, meridian, usdc, buyer, feesWallet } = ctx;
-        const fee = ethers.parseUnits("2", 6);
-        await meridian.setFeesAmount(fee);
+        const { meridian, usdc, buyer, seller, feesWallet } = ctx;
+        await meridian.setFeesRateBps(500); // 5%
 
-        const totalAmount = ethers.parseUnits("1000", 6);
-        const { transactionID } = await createAndSignTransaction(
-          ctx,
-          { transactionModel: TransactionModel.PartialLocked, advanceAmount: totalAmount, totalAmount },
-          "CONT-REF-001",
-          "BILL-FEES"
-        );
-        const advance = (totalAmount * 30n) / 100n;
+        const { transactionID, totalAmount } = await createSignedBySellerOnly(ctx, {
+          transactionModel: TransactionModel.FullLocked,
+        });
+        const feesAmount = (totalAmount * 500n) / 10000n;
+        const netAmountDue = totalAmount - feesAmount / 2n;
 
-        // L'acheteur doit approuver le dépôt ET les frais : la somme des deux
-        // safeTransferFrom effectués par depositFunds sur le premier appel.
-        await usdc.connect(buyer).approve(await meridian.getAddress(), advance + fee);
+        // Seul un approve des frais est nécessaire avant la signature
+        // acheteur (celle qui complète le dossier) : l'allowance du dépôt
+        // lui-même n'est demandée qu'ensuite, via depositFunds.
+        await usdc.connect(buyer).approve(await meridian.getAddress(), feesAmount);
 
         const feesWalletBalanceBefore = await usdc.balanceOf(feesWallet.address);
 
-        await expect(meridian.connect(buyer).depositFunds(transactionID))
+        await expect(meridian.connect(buyer).signTransactionBuyer(transactionID))
           .to.emit(meridian, "FeesPaid")
-          .withArgs(transactionID, buyer.address, feesWallet.address, fee, Currency.USDC)
-          .and.to.emit(meridian, "FundsDeposited")
-          .withArgs(transactionID, buyer.address, advance, Currency.USDC);
+          .withArgs(transactionID, buyer.address, feesWallet.address, feesAmount, Currency.USDC)
+          .and.to.emit(meridian, "TransactionSigned");
 
-        expect((await usdc.balanceOf(feesWallet.address)) - feesWalletBalanceBefore).to.equal(fee);
+        expect((await usdc.balanceOf(feesWallet.address)) - feesWalletBalanceBefore).to.equal(feesAmount);
 
-        const afterFirstDeposit = await meridian.getTransaction(transactionID);
-        expect(afterFirstDeposit.feesPaid).to.equal(true);
-        expect(afterFirstDeposit.depositedAmount).to.equal(advance);
+        const afterSign = await meridian.getTransaction(transactionID);
+        expect(afterSign.feesPaid).to.equal(true);
+        expect(afterSign.feesAmount).to.equal(feesAmount);
+        expect(afterSign.netAmountDue).to.equal(netAmountDue);
 
-        // Second dépôt (le solde de totalAmount) : plus aucun prélèvement de
-        // frais, seule l'allowance du dépôt lui-même est nécessaire.
-        const remainder = totalAmount - advance;
-        await usdc.connect(buyer).approve(await meridian.getAddress(), remainder);
-
+        // Le dépôt ne porte que sur netAmountDue, plus sur totalAmount.
+        await usdc.connect(buyer).approve(await meridian.getAddress(), netAmountDue);
         await expect(meridian.connect(buyer).depositFunds(transactionID))
           .to.emit(meridian, "FundsDeposited")
-          .withArgs(transactionID, buyer.address, remainder, Currency.USDC)
+          .withArgs(transactionID, buyer.address, netAmountDue, Currency.USDC)
           .and.to.not.emit(meridian, "FeesPaid");
 
-        expect(await usdc.balanceOf(feesWallet.address)).to.equal(feesWalletBalanceBefore + fee);
+        const afterDeposit = await meridian.getTransaction(transactionID);
+        expect(afterDeposit.depositedAmount).to.equal(netAmountDue);
+        expect(afterDeposit.depositCompleted).to.equal(true);
 
-        const afterSecondDeposit = await meridian.getTransaction(transactionID);
-        expect(afterSecondDeposit.depositedAmount).to.equal(totalAmount);
-        expect(afterSecondDeposit.depositCompleted).to.equal(true);
+        // FullLocked -> AdvancePaymentMode.Deferred : le retrait exige le
+        // conteneur à destination (transactionCondition par défaut =
+        // AtTheEndOfDelivery, voir buildDetails).
+        await reportAtDestination(ctx, transactionID);
+        const sellerBalanceBefore = await usdc.balanceOf(seller.address);
+        await meridian.connect(seller).withdrawFunds(transactionID);
+
+        // Le fournisseur ne touche que netAmountDue : sa moitié des frais a
+        // été absorbée par la réduction du montant déposé, sans aucune
+        // déduction séparée au retrait.
+        expect((await usdc.balanceOf(seller.address)) - sellerBalanceBefore).to.equal(netAmountDue);
       });
 
-      it("refuse le dépôt si l'acheteur n'a pas approuvé assez pour couvrir dépôt + frais", async function () {
+      it("plafonne advanceAmount à netAmountDue s'il le dépassait (saisi avant que netAmountDue existe)", async function () {
         const ctx = await deployFixture();
-        const { ethers, meridian, usdc, buyer } = ctx;
-        const fee = ethers.parseUnits("2", 6);
-        await meridian.setFeesAmount(fee);
+        const { meridian, usdc, buyer } = ctx;
+        await meridian.setFeesRateBps(500); // 5%
 
-        const { transactionID, totalAmount } = await createAndSignTransaction(ctx, {
+        const totalAmount = 1000n * 10n ** 6n;
+        // Modèle Free : advanceAmount est repris tel quel (pas de mise à
+        // l'échelle 30%/15%), le cas le plus direct pour dépasser netAmountDue.
+        const { transactionID } = await createSignedBySellerOnly(ctx, {
+          transactionModel: TransactionModel.Free,
+          advanceAmount: totalAmount,
+          totalAmount,
+        });
+        const feesAmount = (totalAmount * 500n) / 10000n;
+        const netAmountDue = totalAmount - feesAmount / 2n;
+
+        await usdc.connect(buyer).approve(await meridian.getAddress(), feesAmount);
+        await meridian.connect(buyer).signTransactionBuyer(transactionID);
+
+        const afterSign = await meridian.getTransaction(transactionID);
+        expect(afterSign.advanceAmount).to.equal(netAmountDue); // plafonné, pas totalAmount
+
+        // Le dépôt couvre alors netAmountDue en un seul appel.
+        await usdc.connect(buyer).approve(await meridian.getAddress(), netAmountDue);
+        await expect(meridian.connect(buyer).depositFunds(transactionID))
+          .to.emit(meridian, "FundsDeposited")
+          .withArgs(transactionID, buyer.address, netAmountDue, Currency.USDC);
+
+        expect((await meridian.getTransaction(transactionID)).depositCompleted).to.equal(true);
+      });
+
+      it("n'a aucun effet quand feesRateBps vaut 0 (comportement par défaut, rétrocompatible)", async function () {
+        const ctx = await deployFixture();
+        const { meridian, usdc, buyer, feesWallet } = ctx;
+        const { transactionID, totalAmount } = await createSignedBySellerOnly(ctx, {
           transactionModel: TransactionModel.FullLocked,
         });
 
-        // N'approuve que le montant du dépôt, pas les frais en plus.
-        await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+        const feesWalletBalanceBefore = await usdc.balanceOf(feesWallet.address);
 
-        await expect(meridian.connect(buyer).depositFunds(transactionID)).to.be.revertedWithCustomError(
+        await expect(meridian.connect(buyer).signTransactionBuyer(transactionID)).to.not.emit(meridian, "FeesPaid");
+
+        const stored = await meridian.getTransaction(transactionID);
+        expect(stored.feesAmount).to.equal(0);
+        expect(stored.feesPaid).to.equal(false);
+        expect(stored.netAmountDue).to.equal(totalAmount);
+        expect(await usdc.balanceOf(feesWallet.address)).to.equal(feesWalletBalanceBefore);
+      });
+
+      it("refuse la signature acheteur si l'allowance ne couvre pas les frais", async function () {
+        const ctx = await deployFixture();
+        const { meridian, usdc, buyer } = ctx;
+        await meridian.setFeesRateBps(500);
+
+        const { transactionID } = await createSignedBySellerOnly(ctx, {
+          transactionModel: TransactionModel.FullLocked,
+        });
+
+        // Aucune approbation des frais.
+        await expect(meridian.connect(buyer).signTransactionBuyer(transactionID)).to.be.revertedWithCustomError(
           usdc,
           "ERC20InsufficientAllowance"
         );
       });
 
-      it("refuse le dépôt si le wallet de frais n'est pas configuré", async function () {
+      it("refuse la signature acheteur si le wallet de frais n'est pas configuré (taux non nul)", async function () {
         const ctx = await deployFixture();
         const { ethers, usdc, mockSanctionsOracle, sanctionsOracle, buyer, seller } = ctx;
 
-        // Nouveau contrat Meridian sans setFeesWalletAddress, mais avec tout
-        // le reste câblé pour atteindre depositFunds.
+        // Nouveau contrat Meridian avec un taux de frais configuré, mais
+        // sans setFeesWalletAddress.
         const freshMeridian = await ethers.deployContract("Meridian");
         await freshMeridian.setMockSanctionsOracleAddress(await mockSanctionsOracle.getAddress());
         await freshMeridian.setSanctionsOracleAddress(await sanctionsOracle.getAddress());
         await freshMeridian.setTokenAddress(Currency.USDC, await usdc.getAddress());
+        await freshMeridian.setFeesRateBps(500);
 
         const totalAmount = ethers.parseUnits("100", 6);
         const cancellingDate = await futureDate(ethers);
@@ -1549,11 +1597,11 @@ describe("Meridian", function () {
         await freshMeridian.connect(seller).createTransaction(transactionID, "BILL-NOFEESWALLET");
         await freshMeridian.connect(seller).saveTransactionDetailsSeller(transactionID, "REF", details);
         await freshMeridian.connect(seller).signTransactionSeller(transactionID);
-        await freshMeridian.connect(buyer).signTransactionBuyer(transactionID);
 
-        await usdc.connect(buyer).approve(await freshMeridian.getAddress(), totalAmount);
+        const feesAmount = (totalAmount * 500n) / 10000n;
+        await usdc.connect(buyer).approve(await freshMeridian.getAddress(), feesAmount);
 
-        await expect(freshMeridian.connect(buyer).depositFunds(transactionID)).to.be.revertedWith(
+        await expect(freshMeridian.connect(buyer).signTransactionBuyer(transactionID)).to.be.revertedWith(
           "Fees wallet address not configured"
         );
       });
@@ -1983,10 +2031,9 @@ describe("Meridian", function () {
       const buyerBalanceBefore = await usdc.balanceOf(buyer.address);
 
       await expect(meridian.connect(buyer).rollbackDeposit(transactionID))
-        .to.emit(meridian, "TransactionAborted")
-        .withArgs(transactionID, buyer.address, ctx.seller.address)
-        .and.to.emit(meridian, "totalAmountRefunded")
-        .withArgs(transactionID, buyer.address, totalAmount, Currency.USDC);
+        .to.emit(meridian, "totalAmountRefunded")
+        .withArgs(transactionID, buyer.address, totalAmount, Currency.USDC)
+        .and.to.not.emit(meridian, "TransactionAborted");
 
       const buyerBalanceAfter = await usdc.balanceOf(buyer.address);
       expect(buyerBalanceAfter - buyerBalanceBefore).to.equal(totalAmount);
@@ -1995,12 +2042,33 @@ describe("Meridian", function () {
       expect(stored.depositedAmount).to.equal(0);
       expect(stored.pendingWithdrawalAmount).to.equal(0);
       expect(stored.totalAmountRefunded).to.equal(true);
-      // rollbackEligibilityStatus fait désormais persister le passage à
-      // Aborted (effet de bord) quand l'éligibilité vient de la voie
-      // "échéance dépassée + condition non remplie" — avant, le statut
-      // restait Signed indéfiniment tant que personne ne déclenchait la
-      // transition.
-      expect(stored.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      // rollbackEligibilityStatus ne fait plus persister de passage à
+      // Aborted (effet de bord retiré) : le statut reste Signed après un
+      // rollback, même quand l'éligibilité vient de la voie "échéance
+      // dépassée + condition non remplie" — le dossier reste utilisable
+      // (voir "permet de redéposer après un rollback intégral" ci-dessous).
+      expect(stored.workflowStatus).to.equal(WorkflowStatus.Signed);
+      // Corollaire indispensable : sans ce reset, un second depositFunds
+      // reverterait avec "Payment already completed" alors que depositedAmount
+      // vaut 0 (voir rollbackDepositCore).
+      expect(stored.depositCompleted).to.equal(false);
+    });
+
+    it("permet de redéposer après un rollback intégral (depositCompleted correctement réinitialisé)", async function () {
+      const ctx = await deployFixture();
+      const { meridian, usdc, buyer } = ctx;
+      const { transactionID, totalAmount } = await overdueAfterDeposit(ctx, "BILL-ROLLBACK-REDEPOSIT");
+
+      await meridian.connect(buyer).rollbackDeposit(transactionID);
+
+      await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+      await expect(meridian.connect(buyer).depositFunds(transactionID))
+        .to.emit(meridian, "FundsDeposited")
+        .withArgs(transactionID, buyer.address, totalAmount, Currency.USDC);
+
+      const stored = await meridian.getTransaction(transactionID);
+      expect(stored.depositedAmount).to.equal(totalAmount);
+      expect(stored.depositCompleted).to.equal(true);
     });
 
     it("rembourse partiellement si le dépôt n'a pas atteint totalAmount", async function () {
@@ -2022,13 +2090,14 @@ describe("Meridian", function () {
       await jumpPastCancellingDate(ethers, stored.transactionCancellingDate);
 
       await expect(meridian.connect(buyer).rollbackDeposit(transactionID))
-        .to.emit(meridian, "TransactionAborted")
-        .and.to.emit(meridian, "partialAmountRefunded")
-        .withArgs(transactionID, buyer.address, advance, Currency.USDC);
+        .to.emit(meridian, "partialAmountRefunded")
+        .withArgs(transactionID, buyer.address, advance, Currency.USDC)
+        .and.to.not.emit(meridian, "TransactionAborted");
 
       const after = await meridian.getTransaction(transactionID);
       expect(after.partialAmountRefunded).to.equal(true);
-      expect(after.workflowStatus).to.equal(WorkflowStatus.Aborted);
+      expect(after.workflowStatus).to.equal(WorkflowStatus.Signed);
+      expect(after.depositCompleted).to.equal(false);
     });
 
     it("refuse un second rollback une fois les fonds déjà remboursés", async function () {

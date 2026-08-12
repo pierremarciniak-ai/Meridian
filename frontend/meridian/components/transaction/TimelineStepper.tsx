@@ -13,7 +13,7 @@ export function TimelineStepper({ status }: { status: WorkflowStatus }) {
     return (
       <div className="status-badge status-aborted w-fit">
         <span className="status-badge__dot" />
-        Dossier abandonné — échéance dépassée
+        Dossier abandonné — sanction détectée
       </div>
     );
   }

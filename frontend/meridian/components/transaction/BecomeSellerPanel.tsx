@@ -38,10 +38,10 @@ export function BecomeSellerPanel({ transactionId, expectedBillNumber, onAccepte
         <CardTitle>Accepter en tant que fournisseur</CardTitle>
       </CardHeader>
       <p className="mb-4 text-sm text-muted">
-        Confirmez le numéro de facture communiqué par l&apos;acheteur pour endosser le rôle de fournisseur sur ce dossier.
+        Confirmez le numéro de bon de commande communiqué par l&apos;acheteur pour endosser le rôle de fournisseur sur ce dossier.
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Field label="Numéro de facture (bill number)" hint="Pré-rempli depuis le dossier ; ne le modifiez que si l'acheteur vous a communiqué une référence différente.">
+        <Field label="Numéro de bon de commande" hint="Pré-rempli depuis le dossier ; ne le modifiez que si l'acheteur vous a communiqué une référence différente.">
           <input
             className="field-input font-mono-tight"
             placeholder="BL-2026-00042"

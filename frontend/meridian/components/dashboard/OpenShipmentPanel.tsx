@@ -23,7 +23,7 @@ export function OpenShipmentPanel() {
     event.preventDefault();
     const trimmed = transactionId.trim();
     if (!TRANSACTION_ID_PATTERN.test(trimmed)) {
-      setIdError("Identifiant invalide : attendu un hash de 32 octets (0x + 64 caractères hexadécimaux).");
+      setIdError("Référence du contrat invalide : attendu un hash de 32 octets (0x + 64 caractères hexadécimaux).");
       return;
     }
     setIdError(null);
@@ -37,12 +37,12 @@ export function OpenShipmentPanel() {
         <CompassIcon className="h-6 w-6 text-subtle" />
       </CardHeader>
       <p className="mb-4 text-sm text-muted">
-        Accédez directement à un dossier dont vous connaissez l&apos;identifiant — utile par exemple pour le wallet
-        configuré comme oracle de position de conteneur, qui n&apos;apparaît jamais dans « Mes dossiers ».
+        Accédez directement à un dossier dont vous connaissez la référence du contrat — utile par exemple pour le
+        wallet configuré comme oracle de position de conteneur, qui n&apos;apparaît jamais dans « Mes dossiers ».
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-end">
         <div className="flex-1">
-          <Field label="Identifiant du dossier (transaction ID)" error={idError ?? undefined}>
+          <Field label="Référence du contrat (transaction ID)" error={idError ?? undefined}>
             <input
               className="field-input font-mono-tight"
               placeholder="0x…"

@@ -74,8 +74,8 @@ async function main() {
 
   // --- 8. Configuration du wallet de frais (backend) ---
   await meridian.setFeesWalletAddress(feesWallet.address);
-  await meridian.setFeesAmount(2000000); // 2000000 = 2 USDC/USDT/EURC (6 décimales)
-  console.log("Fees set: ", await meridian.feesAmount());
+  await meridian.setFeesRateBps(1000); // ex: 250 = 2,50 %, sur 10000
+  console.log("FeesRateBps set: ", await meridian.feesRateBps());
 
   console.log("\n--- Pour l'attestation de position (frontend/meridian/.env.local) ---");
   console.log("CONTAINER_ORACLE_PRIVATE_KEY= (clé privée du compte #3 affichée au démarrage de `npx hardhat node`)");

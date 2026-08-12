@@ -11,7 +11,6 @@ import type { OnChainTransaction } from "@/lib/domain/transaction";
 import { estimateDepositAmount } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Allowance, useErc20Balance, useErc20Meta } from "@/hooks/useErc20";
-import { useFeesAmount } from "@/hooks/useFeesAmount";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { erc20Abi } from "@/lib/web3/abi/erc20";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
@@ -25,25 +24,20 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
   const { decimals, symbol } = useErc20Meta(tokenAddress);
   const balanceQuery = useErc20Balance(tokenAddress, address);
   const allowanceQuery = useErc20Allowance(tokenAddress, address, meridianAddress);
-  const { feesAmount } = useFeesAmount();
 
   const approveAction = useContractAction();
   const depositAction = useContractAction();
 
+  // Les frais de gestion sont désormais prélevés à la signature complète du
+  // dossier (voir TransactionSummary), pas au dépôt : amountDue porte sur
+  // netAmountDue (déjà réduit de la part de frais du fournisseur), plus
+  // aucun montant de frais à ajouter ici.
   const amountDue = estimateDepositAmount(tx);
-  // depositFunds prélève les frais de gestion en plus du dépôt lui-même,
-  // mais seulement au tout premier appel réussi (tx.feesPaid encore à
-  // false) — voir Meridian.sol. Il faut donc les inclure dans l'allowance
-  // à approuver et dans le montant réellement transféré par l'acheteur ce
-  // coup-ci, sans les compter sur les dépôts complémentaires suivants.
-  const isFirstDeposit = !tx.feesPaid;
-  const feesForThisDeposit = isFirstDeposit ? feesAmount : 0n;
-  const totalDue = amountDue + feesForThisDeposit;
 
   const allowance = (allowanceQuery.data as bigint | undefined) ?? 0n;
   const balance = (balanceQuery.data as bigint | undefined) ?? 0n;
-  const needsApproval = allowance < totalDue;
-  const insufficientBalance = balance < totalDue;
+  const needsApproval = allowance < amountDue;
+  const insufficientBalance = balance < amountDue;
 
   useEffect(() => {
     if (approveAction.isSuccess) allowanceQuery.refetch();
@@ -78,15 +72,8 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
         <span className="text-muted">
           Prochain versement à effectuer : <span className="text-foam">{formatAmount(amountDue, decimals)} {currencyLabels[tx.currency]}</span>
         </span>
-        {feesForThisDeposit > 0n && (
-          <span className="text-muted">
-            + Frais de gestion (1er dépôt) : <span className="text-foam">{formatAmount(feesForThisDeposit, decimals)} {symbol}</span>
-          </span>
-        )}
-        {feesForThisDeposit > 0n && (
-          <span className="text-foam">
-            Total à approuver et déposer : {formatAmount(totalDue, decimals)} {symbol}
-          </span>
+        {tx.feesPaid && (
+          <span className="text-subtle">Frais de gestion déduits du montant</span>
         )}
         <span className="text-subtle">
           Solde disponible : {formatAmount(balance, decimals)} {symbol}
@@ -112,12 +99,11 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
                   address: tokenAddress,
                   abi: erc20Abi,
                   functionName: "approve",
-                  args: [meridianAddress, totalDue],
+                  args: [meridianAddress, amountDue],
                 })
               }
             >
-              Approuver {formatAmount(totalDue, decimals)} {symbol}
-              {feesForThisDeposit > 0n ? " (dont frais de gestion)" : ""}
+              Approuver {formatAmount(amountDue, decimals)} {symbol}
             </Button>
           </>
         ) : (
@@ -137,7 +123,6 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
               }
             >
               Déposer {formatAmount(amountDue, decimals)} {symbol}
-              {feesForThisDeposit > 0n ? ` + ${formatAmount(feesForThisDeposit, decimals)} ${symbol} de frais` : ""}
             </Button>
           </>
         )}

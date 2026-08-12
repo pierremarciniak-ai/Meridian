@@ -39,7 +39,7 @@ export function AcceptShipmentForm() {
     event.preventDefault();
     const trimmed = transactionId.trim();
     if (!TRANSACTION_ID_PATTERN.test(trimmed)) {
-      setIdError("Identifiant invalide : attendu un hash de 32 octets (0x + 64 caractères hexadécimaux).");
+      setIdError("Référence du contrat invalide : attendu un hash de 32 octets (0x + 64 caractères hexadécimaux).");
       return;
     }
     if (!meridianAddress) return;
@@ -62,7 +62,7 @@ export function AcceptShipmentForm() {
         Renseignez les deux références transmises par l&apos;acheteur pour endosser le rôle de fournisseur sur son dossier.
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Field label="Identifiant du dossier (transaction ID)" error={idError ?? undefined}>
+        <Field label="Référence du contrat (transaction ID)" error={idError ?? undefined}>
           <input
             className="field-input font-mono-tight"
             placeholder="0x…"
@@ -71,10 +71,10 @@ export function AcceptShipmentForm() {
             required
           />
         </Field>
-        <Field label="Numéro de facture (bill number)">
+        <Field label="Numéro de bon de commande">
           <input
             className="field-input font-mono-tight"
-            placeholder="BL-2026-00042"
+            placeholder=""
             value={billNumber}
             onChange={(e) => setBillNumber(e.target.value)}
             required

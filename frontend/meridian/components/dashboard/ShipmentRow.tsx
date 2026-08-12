@@ -85,7 +85,10 @@ export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
         <StatusBadge status={tx.workflowStatus} />
         {awaitingSignature &&
           (isCurrentEditor(tx, roleKey) ? (
-            <span className="waiting-badge">
+            // action-badge (même ton que .action-banner), contrairement à
+            // signatureLabels ci-dessous : c'est une action attendue de
+            // l'utilisateur courant, pas juste une information d'attente.
+            <span className="action-badge">
               <SignatureIcon className="h-3 w-3" />
               En attente de ma signature
             </span>

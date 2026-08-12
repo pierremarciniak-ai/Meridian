@@ -8,7 +8,7 @@ import { WavesIcon } from "@/components/icons";
 
 export default function Home() {
   // Une fois le dossier créé, CreateShipmentForm affiche l'écran "Dossier
-  // créé" (ID + facture à transmettre) : "Espace fournisseur" n'a plus rien à
+  // créé" (référence du contrat + bon de commande à transmettre) : "Espace fournisseur" n'a plus rien à
   // faire sur cette même page à ce moment-là, donc on le masque et on laisse
   // l'écran de résultat prendre toute la largeur de la section.
   const [hasJustCreated, setHasJustCreated] = useState(false);

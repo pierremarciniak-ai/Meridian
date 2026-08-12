@@ -272,12 +272,17 @@ body {
 }
 
 .status-created {
-  background: rgba(217, 165, 102, 0.12);
-  color: var(--color-brass-300);
-  border-color: rgba(217, 165, 102, 0.32);
+  /* Même bleu que .status-initialized/.waiting-badge : le brass/ambre est
+     réservé aux indicateurs "une action de votre part est attendue"
+     (.action-banner/.action-badge et le badge "En attente de ma signature")
+     — un statut de phase ne doit pas porter la même couleur, sous peine de
+     confondre "c'est l'étape en cours" avec "c'est à vous d'agir". */
+  background: rgba(122, 158, 240, 0.12);
+  color: #a9c1f5;
+  border-color: rgba(122, 158, 240, 0.3);
 }
 .status-created .status-badge__dot {
-  background: var(--color-brass-400);
+  background: #a9c1f5;
 }
 
 .status-signed {

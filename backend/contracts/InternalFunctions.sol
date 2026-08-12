@@ -64,8 +64,8 @@ abstract contract InternalFunctions is Ownable {
     // storage (20+12=32 bytes) au lieu d'occuper un slot dédié. uint96 max
     // ≈ 7,9×10^28 : aucune limite réaliste pour un compteur de transactions.
     uint96 public internalID;
-
-    uint128 public feesAmount;
+    
+    uint16 public feesRateBps; // ex: 250 = 2,50 %, sur 10000
 
     enum WorkflowStatus {
         UnSet,
@@ -163,6 +163,8 @@ abstract contract InternalFunctions is Ownable {
         uint128 depositedAmount;
         uint128 pendingWithdrawalAmount;
         uint128 refundAmount;
+        uint128 feesAmount;
+        uint128 netAmountDue;  // = totalAmount - feesAmount/2   
 
         string billNumber;
         string containerReference;
@@ -221,8 +223,6 @@ abstract contract InternalFunctions is Ownable {
     address public feesWalletAddress;
 
     bool public mockSanctionsEnabled = true;
-  
-    mapping(address => bool) public isExempt;
 
     constructor() Ownable(msg.sender) {
         internalID = 0;
@@ -250,6 +250,20 @@ abstract contract InternalFunctions is Ownable {
 
     modifier onlySignedTransaction(bytes32 _transactionID) {
         require(TransactionsList[_transactionID].workflowStatus == WorkflowStatus.TransactionSigned, "Transaction is not signed");
+        _;
+    }
+
+    // Dédié à mintTransactionNFTBuyer/mintTransactionNFTSeller : contrairement
+    // à depositFunds/withdrawFunds (qui doivent rester fermés une fois
+    // TransactionCompleted), le NFT est un reçu censé rester mintable même
+    // une fois le dossier soldé — donc un modifier séparé plutôt qu'élargir
+    // onlySignedTransaction, qui est aussi utilisé par ces deux-là.
+    modifier onlySignedOrCompletedTransaction(bytes32 _transactionID) {
+        WorkflowStatus _status = TransactionsList[_transactionID].workflowStatus;
+        require(
+            _status == WorkflowStatus.TransactionSigned || _status == WorkflowStatus.TransactionCompleted,
+            "Transaction must be signed or completed"
+        );
         _;
     }
 
@@ -336,7 +350,7 @@ abstract contract InternalFunctions is Ownable {
     event ContainerPositionReported(bytes32 indexed transactionID, ContainerPositionStatus status);
     event BuyerIsNowEditor(bytes32 indexed transactionID);
     event SellerIsNowEditor(bytes32 indexed transactionID);
-    event FeesAmountUpdated(uint128 newFeesAmount);
+    event FeesRateBpsUpdated(uint16 newFeesRateBps);
     event FeesPaid(bytes32 indexed transactionID, address indexed buyer, address feesWallet, uint amount, Currency currency);    
     event FeesWalletAddressUpdated(address indexed newFeesWallet);
 
@@ -408,13 +422,13 @@ abstract contract InternalFunctions is Ownable {
 
     function calculateDepositAmount(Transaction storage _transaction) internal view returns (uint128) {
         if (_transaction.transactionModel == TransactionModel.FullLocked) {
-            return _transaction.totalAmount;
+            return _transaction.netAmountDue;
         } else if (_transaction.transactionModel == TransactionModel.Free && _transaction.advanceAmount == 0) {
-            return _transaction.totalAmount;
+            return _transaction.netAmountDue;
         } else if (_transaction.depositedAmount == 0) {
             return _transaction.advanceAmount;
-        } else if (_transaction.depositedAmount > 0 && _transaction.depositedAmount < _transaction.totalAmount) {
-            return _transaction.totalAmount - _transaction.depositedAmount;
+        } else if (_transaction.depositedAmount > 0 && _transaction.depositedAmount < _transaction.netAmountDue) {
+            return _transaction.netAmountDue - _transaction.depositedAmount;
         } else {
             return 0;
         }
@@ -458,9 +472,36 @@ abstract contract InternalFunctions is Ownable {
         if (_transaction.signedByBuyer && _transaction.signedBySeller) {
             _transaction.workflowStatus = WorkflowStatus.TransactionSigned;
 
+            transfertFeesFromBuyer(_transactionID);
+
             emit TransactionSigned(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
         }
     }
+
+function transfertFeesFromBuyer(bytes32 _transactionID) internal {
+    Transaction storage _transaction = TransactionsList[_transactionID];
+
+    uint128 _feesAmount = uint128(uint256(_transaction.totalAmount) * feesRateBps / 10000);
+    _transaction.feesAmount = _feesAmount;
+    _transaction.netAmountDue = _transaction.totalAmount - (_feesAmount / 2);
+
+
+    // plafonne advanceAmount afin de ne pas dépasser netAmountDue en cas de grand acompte
+    if (_transaction.advanceAmount > _transaction.netAmountDue) {
+        _transaction.advanceAmount = _transaction.netAmountDue;
+    }
+
+    if (_feesAmount > 0) {
+        require(feesWalletAddress != address(0), "Fees wallet address not configured");
+        IERC20 _token = tokenAddresses[_transaction.currency];
+        require(address(_token) != address(0), "Token address not configured for this currency");
+
+        _transaction.feesPaid = true;
+        _token.safeTransferFrom(_transaction.buyer.userAddress, feesWalletAddress, _feesAmount);
+
+        emit FeesPaid(_transactionID, _transaction.buyer.userAddress, feesWalletAddress, _feesAmount, _transaction.currency);
+    }
+}    
 
     // Construit les données et mint un NFT "reçu de transaction" pour
     // l'acheteur et un pour le vendeur. Appelé par
@@ -537,7 +578,7 @@ abstract contract InternalFunctions is Ownable {
         return true;
     }
 
-    function rollbackEligibilityStatus(bytes32 _transactionID) internal returns (bool _status) {
+    function rollbackEligibilityStatus(bytes32 _transactionID) internal view returns (bool _status) {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
         require(_transaction.pendingWithdrawalAmount > 0, "No pending amount to rollback");
@@ -551,9 +592,9 @@ abstract contract InternalFunctions is Ownable {
             (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery &&
             _transaction.containerPositionStatus != ContainerPositionStatus.AtDestination)) {
                 
-                _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
+                // _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
 
-                emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
+                // emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
 
                 return true;
             }
@@ -643,6 +684,7 @@ abstract contract InternalFunctions is Ownable {
         _transaction.depositedAmount -= _transaction.pendingWithdrawalAmount;
         _transaction.pendingWithdrawalAmount = 0;
         _transaction.refundAmount = _refundAmount;
+        _transaction.depositCompleted = false;
 
         _token.safeTransfer(_transaction.buyer.userAddress, _refundAmount);
 
@@ -656,9 +698,6 @@ abstract contract InternalFunctions is Ownable {
     }
 
     function checkSanction(address _userAddress) internal returns (bool) {
-        if (isExempt[_userAddress]) {
-            return false;
-        }
 
         address _oracleAddress = mockSanctionsEnabled ? mockSanctionsOracleAddress : sanctionsOracleAddress;
 

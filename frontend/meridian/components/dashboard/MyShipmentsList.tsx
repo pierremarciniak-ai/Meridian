@@ -81,7 +81,7 @@ export function MyShipmentsList() {
           <SearchIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-subtle" />
           <input
             className="field-input pr-9"
-            placeholder="Rechercher par identifiant ou numéro de facture…"
+            placeholder="Rechercher par référence du contrat ou numéro de bon de commande…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />

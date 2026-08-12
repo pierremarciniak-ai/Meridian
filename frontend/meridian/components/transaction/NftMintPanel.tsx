@@ -79,7 +79,7 @@ export function NftMintPanel({
 
       {!alreadyMinted && (
         <p className="mb-4 text-sm text-muted">
-          Mintez un NFT récapitulant ce dossier (montants, conditions, dates) à votre nom, à titre de reçu on-chain.
+          Mintez un NFT récapitulant ce contrat (montants, conditions, dates) à titre de reçu on-chain.
         </p>
       )}
 

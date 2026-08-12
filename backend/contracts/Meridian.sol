@@ -70,18 +70,6 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         }
     }
 
-    function addExemptAddress(address _account) external onlyOwner {
-        isExempt[_account] = true;
-
-        emit ExemptAddressAdded(_account);
-    }
-
-    function removeExemptAddress(address _account) external onlyOwner {
-        isExempt[_account] = false;
-
-        emit ExemptAddressRemoved(_account);
-    }
-
     function setNewOwner(address _newOwner) external onlyOwner {
         transferOwnership(_newOwner);
     }
@@ -93,10 +81,10 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit FeesWalletAddressUpdated(_feesWalletAddress);
     }
 
-    function setFeesAmount(uint128 _feesAmount) external onlyOwner {
-        feesAmount = _feesAmount;
+    function setFeesRateBps(uint16 _feesRateBps) external onlyOwner {
+        feesRateBps = _feesRateBps;
 
-        emit FeesAmountUpdated(_feesAmount);
+        emit FeesRateBpsUpdated(_feesRateBps);
     }
 
     function initializeTransaction(TransactionDetailsInput calldata _details, string calldata _billNumber) external
@@ -199,19 +187,19 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         }
     }
 
-    function signTransactionSeller(bytes32 _transactionID) external onlySeller(_transactionID) sellerInfosCompleted(_transactionID)
-    onlyCreatedTransaction(_transactionID) {
+    function signTransactionSeller(bytes32 _transactionID) external nonReentrant onlySeller(_transactionID)
+    sellerInfosCompleted(_transactionID) onlyCreatedTransaction(_transactionID) {
 
         signTransaction(_transactionID, UserType.Seller);     
     }
 
-    function signTransactionBuyer(bytes32 _transactionID) external onlyBuyer(_transactionID) sellerInfosCompleted(_transactionID)
-    onlyCreatedTransaction(_transactionID) {
+    function signTransactionBuyer(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID)
+    sellerInfosCompleted(_transactionID) onlyCreatedTransaction(_transactionID) {
 
         signTransaction(_transactionID, UserType.Buyer);
     }
 
-    function mintTransactionNFTBuyer(bytes32 _transactionID) external onlyBuyer(_transactionID) onlySignedTransaction(_transactionID) {
+    function mintTransactionNFTBuyer(bytes32 _transactionID) external onlyBuyer(_transactionID) onlySignedOrCompletedTransaction(_transactionID) {
         require(meridianNFTAddress != address(0), "Meridian NFT contract not configured");
 
         Transaction storage _transaction = TransactionsList[_transactionID];
@@ -223,7 +211,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit TransactionNFTMinted(_transactionID, _transaction.buyer.userType, _transaction.buyer.userAddress, tokenId);
     }
 
-    function mintTransactionNFTSeller(bytes32 _transactionID) external onlySeller(_transactionID) onlySignedTransaction(_transactionID) {
+    function mintTransactionNFTSeller(bytes32 _transactionID) external onlySeller(_transactionID) onlySignedOrCompletedTransaction(_transactionID) {
         require(meridianNFTAddress != address(0), "Meridian NFT contract not configured");
 
         Transaction storage _transaction = TransactionsList[_transactionID];
@@ -258,16 +246,8 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
             _transaction.depositedAmount += _amountToDeposit;
             _transaction.pendingWithdrawalAmount += _amountToDeposit;
             
-            if (_transaction.depositedAmount >= _transaction.totalAmount) {
+            if (_transaction.depositedAmount >= _transaction.netAmountDue) {
                 _transaction.depositCompleted = true;
-            }
-
-            if (!_transaction.feesPaid) {
-                require(feesWalletAddress != address(0), "Fees wallet address not configured");
-                _transaction.feesPaid = true;
-                _token.safeTransferFrom(_transaction.buyer.userAddress, feesWalletAddress, feesAmount);
-
-                emit FeesPaid(_transactionID, _transaction.buyer.userAddress, feesWalletAddress, feesAmount, _transaction.currency);
             }
 
             _token.safeTransferFrom(_transaction.buyer.userAddress, address(this), _amountToDeposit);

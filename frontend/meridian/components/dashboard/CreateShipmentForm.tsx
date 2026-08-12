@@ -21,10 +21,10 @@ import {
   transactionModelLabels,
 } from "@/lib/domain/enums";
 import { dateInputToUnix, dateTimeInputToUnix, formatAmount, parseAmountInput, unixToDateTimeInput } from "@/lib/domain/format";
-import { estimateAdvanceAmount } from "@/lib/domain/transaction";
+import { estimateAdvanceAmount, estimateFees } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
-import { useFeesAmount } from "@/hooks/useFeesAmount";
+import { useFeesRateBps } from "@/hooks/useFeesRateBps";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
@@ -64,7 +64,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
   const tokenAddress = tokenAddresses[currency];
   const { decimals, symbol } = useErc20Meta(tokenAddress);
   const { execute, stage, error, receipt, isBusy } = useContractAction();
-  const { feesAmount } = useFeesAmount();
+  const { feesRateBps } = useFeesRateBps();
 
   useEffect(() => {
     // shortDeadline vient de useShortDeadlineMode, résolu de façon
@@ -100,6 +100,11 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
   // que de lui envoyer directement le montant déjà calculé — sinon le
   // pourcentage serait appliqué deux fois.
   const autoAdvanceAmount = estimateAdvanceAmount(model, totalAmountParsed);
+  // Recalculé à chaque frappe (totalAmountParsed en dépend) : estimation en
+  // temps réel, le montant qui fera foi étant celui calculé on-chain à la
+  // double signature (voir TransactionSummary), sur le totalAmount alors en
+  // vigueur.
+  const feesEstimate = estimateFees(totalAmountParsed, feesRateBps).feesAmount;
   const freeAdvanceParsed = isFreeModel ? parseAmountInput(advanceAmountInput, decimals) : 0n;
   const advanceTooHigh = isFreeModel && totalAmountParsed > 0n && freeAdvanceParsed >= totalAmountParsed;
 
@@ -133,8 +138,8 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
           Transmettez ces deux références à votre fournisseur : elles lui permettront d&apos;accepter le dossier.
         </p>
         <div className="mt-4 flex flex-col gap-2">
-          <CopyChip label="ID" value={created.id} chars={10} />
-          <CopyChip label="Facture" value={created.billNumber} chars={12} />
+          <CopyChip label="Référence du contrat" value={created.id} chars={10} />
+          <CopyChip label="Bon de commande" value={created.billNumber} chars={12} />
         </div>
         <div className="mt-6 flex gap-3">
           <Button onClick={() => router.push(`/transaction/${created.id}`)}>Ouvrir le dossier</Button>
@@ -228,8 +233,8 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
           <Field
             label={`Montant total (${symbol || "…"})`}
             hint={
-              feesAmount > 0n
-                ? `+ ${formatAmount(feesAmount, decimals)} ${symbol} de frais de gestion, prélevés lors du premier dépôt.`
+              feesEstimate > 0n
+                ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de gestion, à payer par l'acheteur à la double signature (en plus du dépôt).`
                 : undefined
             }
           >
@@ -272,10 +277,10 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
             />
           </Field>
 
-          <Field label="Numéro de facture (bill number)" hint="Doit être communiqué au fournisseur pour qu'il accepte le dossier.">
+          <Field label="Numéro de bon de commande" hint="Doit être communiqué au fournisseur pour qu'il accepte le dossier.">
             <input
               className="field-input font-mono-tight"
-              placeholder="BL-2026-00042"
+              placeholder=""
               value={billNumber}
               onChange={(e) => setBillNumber(e.target.value)}
               required

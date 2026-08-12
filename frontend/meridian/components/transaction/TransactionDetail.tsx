@@ -92,7 +92,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
           <div>
             <CardTitle>{tx.billNumber || "Dossier sans référence"}</CardTitle>
             <div className="mt-2">
-              <CopyChip label="ID" value={id} chars={8} />
+              <CopyChip label="Référence du contrat" value={id} chars={8} />
             </div>
           </div>
           <StatusBadge status={tx.workflowStatus} />
@@ -123,8 +123,8 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       {tx.workflowStatus === WorkflowStatus.Initialized && !hasSeller(tx) && role === "buyer" && (
         <Card>
           <p className="text-sm text-subtle">
-            En attente qu&apos;un fournisseur accepte ce dossier. Transmettez-lui l&apos;identifiant et le numéro de
-            facture.
+            En attente qu&apos;un fournisseur accepte ce dossier. Transmettez-lui la référence du contrat et le numéro
+            de bon de commande.
           </p>
         </Card>
       )}
@@ -150,8 +150,8 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
           {isRollbackEligible(tx, livePosition) ? (
             <>
               <p className="text-sm text-danger">
-                La date d&apos;expiration de ce dossier est dépassée. Son statut sera passé à « Abandonné » une fois
-                votre retrait effectué.
+                La date d&apos;expiration de la provision est dépassée. Vous pouvez récupérer votre dépôt, le dossier
+                reste actif et vous pourrez à nouveau effectuer le dépôt par la suite si vous le souhaitez.
               </p>
               <RollbackPanel
                 transactionId={id}
@@ -162,9 +162,8 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
             </>
           ) : (
             <p className="text-sm text-danger">
-              La date d&apos;expiration de ce dossier est dépassée, mais la condition de paiement convenue est déjà
-              remplie : le retrait revient désormais au fournisseur, aucune récupération n&apos;est possible de votre
-              côté.
+              La date d&apos;expiration de la provision est dépassée mais la condition de paiement convenue est 
+              remplie : le retrait est seulement possible pour le fournisseur.
             </p>
           )}
         </Card>
@@ -184,9 +183,8 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
             <AlertIcon className="h-6 w-6 text-danger" />
           </CardHeader>
           <p className="text-sm text-danger">
-            La date d&apos;expiration de ce dossier est dépassée. Le retrait reste possible tant que l&apos;acheteur n&apos;a
-            pas déclenché l&apos;abandon de son côté (dépôt ou récupération de fonds) — au-delà, il ne sera plus
-            possible d&apos;effectuer le retrait.
+            La date d&apos;expiration de la provision est dépassée. L&apos;acheteur peut désormais 
+            récupérer la provision déposée. Le retrait reste possible tant que la provision est déposée.
           </p>
         </Card>
       )}
@@ -230,7 +228,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
               ? "L'acheteur a été détecté comme sanctionné au moment de sa signature."
               : tx.sellerSanctioned
                 ? "Le fournisseur a été détecté comme sanctionné (à la signature ou au retrait)."
-                : "La date d'expiration de la provision a été dépassée et le dépôt a été retiré par l'acheteur."}
+                : "Une sanction a été détectée sur ce dossier."}
           </p>
           {role === "buyer" && canRollbackDeposit(tx) && <RollbackPanel transactionId={id} tx={tx} onRolledBack={() => refetch()} />}
         </Card>

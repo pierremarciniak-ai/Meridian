@@ -110,6 +110,19 @@ export const meridianAbi = [
     "inputs": [
       {
         "indexed": true,
+        "internalType": "bytes32",
+        "name": "transactionID",
+        "type": "bytes32"
+      }
+    ],
+    "name": "BuyerIsNowEditor",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
         "internalType": "address",
         "name": "newOracle",
         "type": "address"
@@ -161,6 +174,69 @@ export const meridianAbi = [
       }
     ],
     "name": "ExemptAddressRemoved",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "transactionID",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "buyer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "feesWallet",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum InternalFunctions.Currency",
+        "name": "currency",
+        "type": "uint8"
+      }
+    ],
+    "name": "FeesPaid",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint16",
+        "name": "newFeesRateBps",
+        "type": "uint16"
+      }
+    ],
+    "name": "FeesRateBpsUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "newFeesWallet",
+        "type": "address"
+      }
+    ],
+    "name": "FeesWalletAddressUpdated",
     "type": "event"
   },
   {
@@ -294,6 +370,32 @@ export const meridianAbi = [
       }
     ],
     "name": "SanctionsOracleAddressUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "userAddress",
+        "type": "address"
+      }
+    ],
+    "name": "SanctionsOracleCallFailed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "transactionID",
+        "type": "bytes32"
+      }
+    ],
+    "name": "SellerIsNowEditor",
     "type": "event"
   },
   {
@@ -597,19 +699,6 @@ export const meridianAbi = [
     "type": "event"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_account",
-        "type": "address"
-      }
-    ],
-    "name": "addExemptAddress",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "containerPositionOracleAddress",
     "outputs": [
@@ -651,6 +740,32 @@ export const meridianAbi = [
     "name": "depositFunds",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feesRateBps",
+    "outputs": [
+      {
+        "internalType": "uint16",
+        "name": "",
+        "type": "uint16"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "feesWalletAddress",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -825,6 +940,16 @@ export const meridianAbi = [
             "type": "uint128"
           },
           {
+            "internalType": "uint128",
+            "name": "feesAmount",
+            "type": "uint128"
+          },
+          {
+            "internalType": "uint128",
+            "name": "netAmountDue",
+            "type": "uint128"
+          },
+          {
             "internalType": "string",
             "name": "billNumber",
             "type": "string"
@@ -912,25 +1037,6 @@ export const meridianAbi = [
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "name": "isExempt",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "meridianNFTAddress",
     "outputs": [
@@ -1006,19 +1112,6 @@ export const meridianAbi = [
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_account",
-        "type": "address"
-      }
-    ],
-    "name": "removeExemptAddress",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -1231,6 +1324,19 @@ export const meridianAbi = [
   {
     "inputs": [
       {
+        "internalType": "uint16",
+        "name": "_feesRateBps",
+        "type": "uint16"
+      }
+    ],
+    "name": "setFeesRateBps",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "address",
         "name": "_feesWalletAddress",
         "type": "address"
@@ -1239,45 +1345,6 @@ export const meridianAbi = [
     "name": "setFeesWalletAddress",
     "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint128",
-        "name": "_feesAmount",
-        "type": "uint128"
-      }
-    ],
-    "name": "setFeesAmount",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "feesAmount",
-    "outputs": [
-      {
-        "internalType": "uint128",
-        "name": "",
-        "type": "uint128"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "feesWalletAddress",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -1461,107 +1528,5 @@ export const meridianAbi = [
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "transactionID",
-        "type": "bytes32"
-      }
-    ],
-    "name": "BuyerIsNowEditor",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "transactionID",
-        "type": "bytes32"
-      }
-    ],
-    "name": "SellerIsNowEditor",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "userAddress",
-        "type": "address"
-      }
-    ],
-    "name": "SanctionsOracleCallFailed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint128",
-        "name": "newFeesAmount",
-        "type": "uint128"
-      }
-    ],
-    "name": "FeesAmountUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "newFeesWallet",
-        "type": "address"
-      }
-    ],
-    "name": "FeesWalletAddressUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "transactionID",
-        "type": "bytes32"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "buyer",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "feesWallet",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "enum InternalFunctions.Currency",
-        "name": "currency",
-        "type": "uint8"
-      }
-    ],
-    "name": "FeesPaid",
-    "type": "event"
   }
 ] as const;

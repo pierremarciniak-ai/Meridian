@@ -60,27 +60,27 @@ export const workflowStatusLabels: Record<WorkflowStatus, string> = {
 };
 
 export const transactionConditionLabels: Record<TransactionCondition, string> = {
-  [TransactionCondition.AtTheBeginningOfDelivery]: "Au départ de la livraison",
-  [TransactionCondition.AtTheEndOfDelivery]: "À réception de la livraison",
+  [TransactionCondition.AtTheBeginningOfDelivery]: "Départ du bateau",
+  [TransactionCondition.AtTheEndOfDelivery]: "Arrivée du bateau",
 };
 
 export const transactionModelLabels: Record<TransactionModel, string> = {
-  [TransactionModel.FullLocked]: "Paiement total bloqué",
-  [TransactionModel.PartialLocked]: "Acompte bloqué (30%)",
-  [TransactionModel.PartialImmediate]: "Acompte immédiat (15%)",
-  [TransactionModel.Free]: "Libre",
+  [TransactionModel.FullLocked]: "Paiement avec provision 100%",
+  [TransactionModel.PartialLocked]: "Paiement avec provision 30%",
+  [TransactionModel.PartialImmediate]: "Paiement anticipé 15%",
+  [TransactionModel.Free]: "Paiement libre",
 };
 
 export const transactionModelHints: Record<TransactionModel, string> = {
-  [TransactionModel.FullLocked]: "L'intégralité du montant est déposée en une fois, avant l'expédition.",
-  [TransactionModel.PartialLocked]: "30% du montant saisi est exigé comme acompte, à solder avant l'échéance.",
-  [TransactionModel.PartialImmediate]: "15% du montant saisi est exigé comme acompte, versé immédiatement.",
-  [TransactionModel.Free]: "Montant et échéancier libres, à la discrétion des deux parties.",
+  [TransactionModel.FullLocked]: "Provision déposée à 100% en une fois",
+  [TransactionModel.PartialLocked]: "Provision déposée à 30%, reste du solde à l'échéance",
+  [TransactionModel.PartialImmediate]: "15% du montant total payé à la signature du contrat, reste du solde à l'échéance",
+  [TransactionModel.Free]: "Choix des montants et paiement anticipé / provision libre",
 };
 
 export const advancePaymentModeLabels: Record<AdvancePaymentMode, string> = {
-  [AdvancePaymentMode.Immediate]: "Immédiat",
-  [AdvancePaymentMode.Deferred]: "Différé",
+  [AdvancePaymentMode.Immediate]: "Paiement anticipé à la signature du contrat",
+  [AdvancePaymentMode.Deferred]: "Provision à la signature du contrat",
 };
 
 export const userTypeLabels: Record<UserType, string> = {
@@ -89,7 +89,7 @@ export const userTypeLabels: Record<UserType, string> = {
 };
 
 export const containerPositionStatusLabels: Record<ContainerPositionStatus, string> = {
-  [ContainerPositionStatus.UnSet]: "Non renseignée",
-  [ContainerPositionStatus.InTransit]: "En cours de transport",
-  [ContainerPositionStatus.AtDestination]: "Arrivé à destination",
+  [ContainerPositionStatus.UnSet]: "N/A",
+  [ContainerPositionStatus.InTransit]: "Départ confirmé",
+  [ContainerPositionStatus.AtDestination]: "Arrivée confirmée",
 };

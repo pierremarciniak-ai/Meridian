@@ -30,11 +30,25 @@ export type OnChainTransaction = {
   currentEditor: UserType;
   signedByBuyer: boolean;
   signedBySeller: boolean;
-  // Frais de gestion prélevés une seule fois, au tout premier depositFunds
-  // réussi de cette transaction (voir Meridian.sol) — montant courant lisible
-  // via useFeesAmount, pas stocké par transaction (donc pas re-déductible
-  // après coup si le tarif global a changé depuis).
+  // Frais de gestion : prélevés en une fois chez l'acheteur (100% du
+  // montant) dès que les deux signatures sont réunies — voir checkSignatures
+  // / transfertFeesFromBuyer dans InternalFunctions.sol, pas au dépôt.
+  // feesAmount/netAmountDue sont figés à ce moment précis (donc fiables même
+  // si le taux global feesRateBps change ensuite) ; tant que feesPaid vaut
+  // false, ces deux champs valent encore 0 et toute valeur affichée ailleurs
+  // n'est qu'une estimation (voir estimateFees ci-dessous).
   feesPaid: boolean;
+  // Frais réellement prélevés (== totalAmount * feesRateBps / 10000 au
+  // moment de la signature). 0 tant que feesPaid vaut false.
+  feesAmount: bigint;
+  // Montant net que l'acheteur doit effectivement déposer (totalAmount -
+  // feesAmount/2, la part du fournisseur étant absorbée par cette réduction
+  // plutôt que déduite séparément à son retrait) — c'est la vraie cible du
+  // dépôt, pas totalAmount (voir estimateDepositAmount). Vaut encore 0 tant
+  // que feesPaid est false (valeur par défaut du struct, calculée seulement
+  // à la signature complète) : ne jamais l'utiliser comme cible de dépôt
+  // avant ce moment, utiliser estimateFees à la place.
+  netAmountDue: bigint;
   depositCompleted: boolean;
   partialWithdrawalCompleted: boolean;
   withdrawalCompleted: boolean;
@@ -106,12 +120,28 @@ export function estimateAdvancePaymentMode(model: TransactionModel, requested: A
 
 // Miroir client de calculateDepositAmount — sert à afficher le montant du
 // prochain dépôt attendu avant de déclencher l'approbation ERC20 + l'appel.
+// N'a de sens qu'une fois la transaction Signed (netAmountDue déjà calculé
+// et advanceAmount déjà plafonné par transfertFeesFromBuyer, voir
+// InternalFunctions.sol) — appelant garanti par tx.workflowStatus côté UI.
 export function estimateDepositAmount(tx: OnChainTransaction): bigint {
-  if (tx.transactionModel === TransactionModel.FullLocked) return tx.totalAmount;
-  if (tx.transactionModel === TransactionModel.Free && tx.advanceAmount === 0n) return tx.totalAmount;
+  if (tx.transactionModel === TransactionModel.FullLocked) return tx.netAmountDue;
+  if (tx.transactionModel === TransactionModel.Free && tx.advanceAmount === 0n) return tx.netAmountDue;
   if (tx.depositedAmount === 0n) return tx.advanceAmount;
-  if (tx.depositedAmount > 0n && tx.depositedAmount < tx.totalAmount) return tx.totalAmount - tx.depositedAmount;
+  if (tx.depositedAmount > 0n && tx.depositedAmount < tx.netAmountDue) return tx.netAmountDue - tx.depositedAmount;
   return 0n;
+}
+
+// Miroir client de la partie calcul de transfertFeesFromBuyer (pas le
+// transfert lui-même) — sert à estimer en temps réel, avant que la
+// transaction soit Signed, le montant des frais et le montant net qui en
+// résultera pour un totalAmount et un feesRateBps donnés. Purement indicatif
+// tant que la transaction n'est pas Signed : le calcul qui fait foi
+// s'exécute on-chain à la double signature, sur les valeurs alors en
+// vigueur. Une fois Signed, préférer tx.feesAmount/tx.netAmountDue (figés,
+// fiables même si feesRateBps change depuis).
+export function estimateFees(totalAmount: bigint, feesRateBps: number): { feesAmount: bigint; netAmountDue: bigint } {
+  const feesAmount = (totalAmount * BigInt(feesRateBps)) / 10000n;
+  return { feesAmount, netAmountDue: totalAmount - feesAmount / 2n };
 }
 
 // Miroir client de la condition sur containerPositionStatus dans

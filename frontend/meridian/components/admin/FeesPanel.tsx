@@ -1,29 +1,24 @@
 "use client";
 
 import { AddressSetterRow } from "@/components/admin/AddressSetterRow";
-import { AmountSetterRow } from "@/components/admin/AmountSetterRow";
+import { RateSetterRow } from "@/components/admin/RateSetterRow";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
-import { Currency } from "@/lib/domain/enums";
-import { useErc20Meta } from "@/hooks/useErc20";
-import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 
-// feesAmount est un montant brut unique (pas indexé par Currency, voir
-// Meridian.sol/depositFunds) appliqué tel quel quelle que soit la devise de
-// la transaction — on affiche/saisit sa valeur en s'appuyant sur les
-// décimales de l'USDC comme référence, puisque USDC/USDT/EURC partagent
-// toutes les trois 6 décimales dans ce projet.
+// feesRateBps est un taux global en points de base (250 = 2,50 %) appliqué à
+// totalAmount au moment de la double signature de chaque dossier, quelle que
+// soit sa devise — voir checkSignatures/transfertFeesFromBuyer dans
+// InternalFunctions.sol. L'acheteur paie la totalité des frais ainsi
+// calculés ; le fournisseur en absorbe la moitié via un dépôt net réduit
+// d'autant (netAmountDue), sans virement séparé de sa part.
 export function FeesPanel({
   feesWalletAddress,
-  feesAmount,
+  feesRateBps,
   onUpdated,
 }: {
   feesWalletAddress: `0x${string}` | undefined;
-  feesAmount: bigint | undefined;
+  feesRateBps: number | undefined;
   onUpdated: () => void;
 }) {
-  const { tokenAddresses } = useTokenAddresses();
-  const { decimals, symbol } = useErc20Meta(tokenAddresses[Currency.USDC]);
-
   return (
     <Card>
       <CardHeader>
@@ -32,18 +27,16 @@ export function FeesPanel({
       <div className="divide-y" style={{ borderColor: "var(--color-navy-700)" }}>
         <AddressSetterRow
           label="Wallet de frais"
-          hint="Destinataire des frais prélevés au premier dépôt de chaque dossier (voir depositFunds)."
+          hint="Destinataire des frais prélevés dès la double signature de chaque dossier (voir checkSignatures)."
           currentValue={feesWalletAddress}
           functionName="setFeesWalletAddress"
           onUpdated={onUpdated}
         />
-        <AmountSetterRow
-          label="Montant des frais"
-          hint={`Même montant quelle que soit la devise de la transaction (USDC/USDT/EURC), exprimé ici en ${symbol || "…"}.`}
-          currentValue={feesAmount}
-          decimals={decimals}
-          symbol={symbol}
-          functionName="setFeesAmount"
+        <RateSetterRow
+          label="Taux de frais"
+          hint="Pourcentage de totalAmount prélevé chez l'acheteur à la double signature ; le fournisseur en absorbe la moitié via un dépôt net réduit d'autant."
+          currentValueBps={feesRateBps}
+          functionName="setFeesRateBps"
           onUpdated={onUpdated}
         />
       </div>

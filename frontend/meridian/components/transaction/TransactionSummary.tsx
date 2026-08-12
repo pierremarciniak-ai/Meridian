@@ -15,9 +15,12 @@ import {
 } from "@/lib/domain/enums";
 import { formatAmount, formatUnixDate } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
-import { isCurrentEditor, sameAddress } from "@/lib/domain/transaction";
+import { estimateFees, isCurrentEditor, sameAddress } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
-import { useFeesAmount } from "@/hooks/useFeesAmount";
+import { useErc20Allowance, useErc20Balance } from "@/hooks/useErc20";
+import { useFeesRateBps } from "@/hooks/useFeesRateBps";
+import { useTokenAddresses } from "@/hooks/useTokenAddresses";
+import { erc20Abi } from "@/lib/web3/abi/erc20";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
@@ -64,26 +67,64 @@ export function TransactionSummary({
   role: "buyer" | "seller" | null;
   onSigned: () => void;
 }) {
-  const { execute, stage, error, isSuccess } = useContractAction();
-  const { feesAmount } = useFeesAmount();
+  const signAction = useContractAction();
+  const approveFeesAction = useContractAction();
   const meridianAddress = useMeridianAddress();
-
-  useEffect(() => {
-    if (isSuccess) onSigned();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuccess]);
+  const { feesRateBps } = useFeesRateBps();
+  const { tokenAddresses } = useTokenAddresses();
+  const tokenAddress = tokenAddresses[tx.currency];
 
   const canSign = tx.workflowStatus === WorkflowStatus.Created;
   const alreadySigned = role === "buyer" ? tx.signedByBuyer : role === "seller" ? tx.signedBySeller : false;
   const myTurn = isCurrentEditor(tx, role);
 
+  // Les frais ne sont plus figés on-chain (tx.feesAmount/netAmountDue restent
+  // à 0) tant que les deux signatures ne sont pas réunies : ce calcul en
+  // temps réel, sur totalAmount et feesRateBps actuels, sert à la fois à
+  // l'affichage avant signature et à dimensionner l'allowance à demander à
+  // l'acheteur. currentEditor démarre toujours à Seller (voir
+  // InternalFunctions.sol) : c'est donc systématiquement la signature de
+  // l'acheteur qui complète le dossier et déclenche le prélèvement — seul ce
+  // rôle a besoin d'un flow d'approbation ici, jamais le fournisseur.
+  const feesEstimate = tx.feesPaid ? tx.feesAmount : estimateFees(tx.totalAmount, feesRateBps).feesAmount;
+
+  const buyerAllowanceQuery = useErc20Allowance(tokenAddress, tx.buyer.userAddress, meridianAddress);
+  const buyerBalanceQuery = useErc20Balance(tokenAddress, tx.buyer.userAddress);
+  const buyerAllowance = (buyerAllowanceQuery.data as bigint | undefined) ?? 0n;
+  const buyerBalance = (buyerBalanceQuery.data as bigint | undefined) ?? 0n;
+
+  const isBuyerTurnToSign = role === "buyer" && canSign && myTurn && !alreadySigned;
+  const feesAlreadyHandled = tx.feesPaid || feesEstimate === 0n;
+  const needsFeeApproval = isBuyerTurnToSign && !feesAlreadyHandled && buyerAllowance < feesEstimate;
+  const insufficientFeeBalance = isBuyerTurnToSign && !feesAlreadyHandled && buyerBalance < feesEstimate;
+
+  useEffect(() => {
+    if (signAction.isSuccess) onSigned();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signAction.isSuccess]);
+
+  useEffect(() => {
+    if (approveFeesAction.isSuccess) buyerAllowanceQuery.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approveFeesAction.isSuccess]);
+
   async function handleSign() {
     if (!meridianAddress) return;
-    await execute({
+    await signAction.execute({
       address: meridianAddress,
       abi: meridianAbi,
       functionName: role === "buyer" ? "signTransactionBuyer" : "signTransactionSeller",
       args: [transactionId],
+    });
+  }
+
+  async function handleApproveFees() {
+    if (!tokenAddress || !meridianAddress) return;
+    await approveFeesAction.execute({
+      address: tokenAddress,
+      abi: erc20Abi,
+      functionName: "approve",
+      args: [meridianAddress, feesEstimate],
     });
   }
 
@@ -118,12 +159,14 @@ export function TransactionSummary({
           <Row label="Frais de gestion">
             {tx.feesPaid ? (
               <span className="flex items-center justify-end gap-1">
-                <CheckIcon className="h-3.5 w-3.5 text-accent" /> Payés
+                <CheckIcon className="h-3.5 w-3.5 text-accent" /> {formatAmount(tx.feesAmount, decimals)} {symbol} payés
               </span>
-            ) : (
+            ) : feesEstimate > 0n ? (
               <>
-                {formatAmount(feesAmount, decimals)} {symbol} · prélevés au 1er dépôt
+                ~{formatAmount(feesEstimate, decimals)} {symbol} · à payer par l&apos;acheteur à la double signature
               </>
+            ) : (
+              "Aucun"
             )}
           </Row>
           <Row label="Date d'expiration de la provision">{formatUnixDate(tx.transactionCancellingDate)}</Row>
@@ -161,15 +204,40 @@ export function TransactionSummary({
               </p>
             ) : (
               <>
-                <TxStatusLine stage={stage} error={error} />
-                <Button
-                  className="mt-2 w-full"
-                  onClick={handleSign}
-                  disabled={alreadySigned}
-                  loading={stage === "signing" || stage === "confirming"}
-                >
-                  {alreadySigned ? "Signé" : `Signer en tant que ${role === "buyer" ? "acheteur" : "fournisseur"}`}
-                </Button>
+                {insufficientFeeBalance && (
+                  <p className="mb-2 text-sm text-danger">
+                    Solde {symbol} insuffisant pour payer les frais de gestion (~{formatAmount(feesEstimate, decimals)} {symbol} requis).
+                  </p>
+                )}
+
+                {needsFeeApproval ? (
+                  <>
+                    <TxStatusLine stage={approveFeesAction.stage} error={approveFeesAction.error} />
+                    <Button
+                      className="mt-2 w-full"
+                      variant="secondary"
+                      onClick={handleApproveFees}
+                      disabled={insufficientFeeBalance || !tokenAddress || !meridianAddress}
+                      loading={approveFeesAction.isBusy}
+                    >
+                      Approuver {formatAmount(feesEstimate, decimals)} {symbol} de frais de gestion
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <TxStatusLine stage={signAction.stage} error={signAction.error} />
+                    <Button
+                      className="mt-2 w-full"
+                      onClick={handleSign}
+                      disabled={alreadySigned || insufficientFeeBalance || !meridianAddress}
+                      loading={signAction.isBusy}
+                    >
+                      {alreadySigned
+                        ? "Signé"
+                        : `Signer en tant que ${role === "buyer" ? "acheteur" : "fournisseur"}`}
+                    </Button>
+                  </>
+                )}
               </>
             )}
           </div>

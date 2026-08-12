@@ -15,10 +15,10 @@ import {
 } from "@/lib/domain/enums";
 import { dateInputToUnix, dateTimeInputToUnix, formatAmount, parseAmountInput, unixToDateInput, unixToDateTimeInput } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
-import { estimateAdvanceAmount, isCurrentEditor } from "@/lib/domain/transaction";
+import { estimateAdvanceAmount, estimateFees, isCurrentEditor } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
-import { useFeesAmount } from "@/hooks/useFeesAmount";
+import { useFeesRateBps } from "@/hooks/useFeesRateBps";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
@@ -48,7 +48,7 @@ export function DetailsForm({
   const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[currency]);
   const { execute, stage, error, isSuccess } = useContractAction();
-  const { feesAmount } = useFeesAmount();
+  const { feesRateBps } = useFeesRateBps();
 
   useEffect(() => {
     // decimals vient de useErc20Meta (lecture on-chain asynchrone, 6 par
@@ -81,6 +81,10 @@ export function DetailsForm({
   // lui transmet le montant total (et non le montant déjà calculé) pour que
   // l'acompte stocké corresponde exactement à ce qui est affiché.
   const autoAdvanceAmount = estimateAdvanceAmount(model, totalAmountParsed);
+  // Recalculé à chaque frappe : même raison que dans CreateShipmentForm, une
+  // pure estimation en temps réel (le montant qui fait foi n'est calculé
+  // qu'à la double signature, voir TransactionSummary).
+  const { feesAmount: feesEstimate, netAmountDue: netAmountDueEstimate } = estimateFees(totalAmountParsed, feesRateBps);
   const myTurn = isCurrentEditor(tx, role);
 
   async function handleSubmit(event: FormEvent) {
@@ -186,8 +190,10 @@ export function DetailsForm({
           <Field
             label={`Montant total (${symbol || "…"})`}
             hint={
-              role === "buyer" && !tx.feesPaid && feesAmount > 0n
-                ? `+ ${formatAmount(feesAmount, decimals)} ${symbol} de frais de gestion, prélevés lors de votre premier dépôt.`
+              !tx.feesPaid && feesEstimate > 0n
+                ? role === "buyer"
+                  ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de gestion, à payer en plus lorsque le dossier sera signé par les deux parties.`
+                  : `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de gestion prélevés à l'acheteur à la double signature ; vous percevrez ~${formatAmount(netAmountDueEstimate, decimals)} ${symbol} au total (frais du fournisseur déjà déduits).`
                 : undefined
             }
           >

@@ -8,7 +8,7 @@ export function Footer() {
           <WavesIcon className="h-4 w-4" />
           Meridian — escrow on-chain pour transactions commerciales maritimes.
         </p>
-        <p className="text-xs text-subtle">Réseau de développement Hardhat local — jetons de test uniquement.</p>
+        <p className="text-xs text-subtle">Usage démo uniquement</p>
       </div>
     </footer>
   );
