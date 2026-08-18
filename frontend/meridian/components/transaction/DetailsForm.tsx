@@ -24,6 +24,11 @@ import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
+// Format ISO 6346 (numéro de conteneur maritime) : 4 lettres (code
+// propriétaire) suivies de 7 chiffres, collés, sans espace ni tiret — voir
+// le placeholder "MEDU1234567" ci-dessous.
+const CONTAINER_REFERENCE_PATTERN = /^[A-Za-z]{4}\d{7}$/;
+
 export function DetailsForm({
   transactionId,
   tx,
@@ -86,10 +91,12 @@ export function DetailsForm({
   // qu'à la double signature, voir TransactionSummary).
   const { feesAmount: feesEstimate, netAmountDue: netAmountDueEstimate } = estimateFees(totalAmountParsed, feesRateBps);
   const myTurn = isCurrentEditor(tx, role);
+  const containerReferenceValid = CONTAINER_REFERENCE_PATTERN.test(containerReference);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!myTurn || !meridianAddress) return;
+    if (role === "seller" && !containerReferenceValid) return;
     const details = {
       currency,
       transactionCondition: condition,
@@ -137,11 +144,14 @@ export function DetailsForm({
             error={
               !containerReference
                 ? "Obligatoire pour la signature du dossier"
-                : undefined
+                : !containerReferenceValid
+                  ? "Format invalide : 4 lettres suivies de 7 chiffres, collés (ex. MEDU1234567)"
+                  : undefined
             }
           >
             <input
               className="field-input font-mono-tight"
+              placeholder=""
               value={containerReference}
               onChange={(e) => setContainerReference(e.target.value)}
               required
@@ -192,8 +202,8 @@ export function DetailsForm({
             hint={
               !tx.feesPaid && feesEstimate > 0n
                 ? role === "buyer"
-                  ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de gestion, à payer en plus lorsque le dossier sera signé par les deux parties.`
-                  : `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de gestion prélevés à l'acheteur à la double signature ; vous percevrez ~${formatAmount(netAmountDueEstimate, decimals)} ${symbol} au total (frais du fournisseur déjà déduits).`
+                  ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de service, à payer en plus lorsque le dossier sera signé par les deux parties.`
+                  : `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de service prélevés à l'acheteur à la double signature ; vous percevrez ~${formatAmount(netAmountDueEstimate, decimals)} ${symbol} au total (frais du fournisseur déjà déduits).`
                 : undefined
             }
           >
@@ -227,7 +237,12 @@ export function DetailsForm({
 
         <TxStatusLine stage={stage} error={error} />
 
-        <Button type="submit" variant="secondary" loading={stage === "signing" || stage === "confirming"}>
+        <Button
+          type="submit"
+          variant="secondary"
+          disabled={role === "seller" && !containerReferenceValid}
+          loading={stage === "signing" || stage === "confirming"}
+        >
           Enregistrer
         </Button>
         </fieldset>

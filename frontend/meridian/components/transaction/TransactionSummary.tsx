@@ -139,7 +139,7 @@ export function TransactionSummary({
 
         <h3 className="label-caps mb-1 mt-6">Logistique</h3>
         <div className="divide-y" style={{ borderColor: "var(--color-navy-700)" }}>
-          <Row label="Conteneur">{tx.containerReference ? <span className="font-mono-tight">{tx.containerReference}</span> : "—"}</Row>
+          <Row label="Référence du conteneur">{tx.containerReference ? <span className="font-mono-tight">{tx.containerReference}</span> : "—"}</Row>
           <Row label="Position du conteneur">{containerPositionStatusLabels[tx.containerPositionStatus]}</Row>
         </div>
       </div>
@@ -156,7 +156,7 @@ export function TransactionSummary({
           <Row label="Montant total">
             {formatAmount(tx.totalAmount, decimals)} {symbol}
           </Row>
-          <Row label="Frais de gestion">
+          <Row label="Frais de service">
             {tx.feesPaid ? (
               <span className="flex items-center justify-end gap-1">
                 <CheckIcon className="h-3.5 w-3.5 text-accent" /> {formatAmount(tx.feesAmount, decimals)} {symbol} payés
@@ -206,7 +206,7 @@ export function TransactionSummary({
               <>
                 {insufficientFeeBalance && (
                   <p className="mb-2 text-sm text-danger">
-                    Solde {symbol} insuffisant pour payer les frais de gestion (~{formatAmount(feesEstimate, decimals)} {symbol} requis).
+                    Solde {symbol} insuffisant pour payer les frais de service (~{formatAmount(feesEstimate, decimals)} {symbol} requis).
                   </p>
                 )}
 
@@ -220,7 +220,7 @@ export function TransactionSummary({
                       disabled={insufficientFeeBalance || !tokenAddress || !meridianAddress}
                       loading={approveFeesAction.isBusy}
                     >
-                      Approuver {formatAmount(feesEstimate, decimals)} {symbol} de frais de gestion
+                      Approuver {formatAmount(feesEstimate, decimals)} {symbol} de frais de service
                     </Button>
                   </>
                 ) : (

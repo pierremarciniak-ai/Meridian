@@ -28,7 +28,7 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
   const approveAction = useContractAction();
   const depositAction = useContractAction();
 
-  // Les frais de gestion sont désormais prélevés à la signature complète du
+  // Les frais de service sont désormais prélevés à la signature complète du
   // dossier (voir TransactionSummary), pas au dépôt : amountDue porte sur
   // netAmountDue (déjà réduit de la part de frais du fournisseur), plus
   // aucun montant de frais à ajouter ici.
@@ -73,7 +73,7 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
           Prochain versement à effectuer : <span className="text-foam">{formatAmount(amountDue, decimals)} {currencyLabels[tx.currency]}</span>
         </span>
         {tx.feesPaid && (
-          <span className="text-subtle">Frais de gestion déduits du montant</span>
+          <span className="text-subtle">Frais de service déduits du montant</span>
         )}
         <span className="text-subtle">
           Solde disponible : {formatAmount(balance, decimals)} {symbol}

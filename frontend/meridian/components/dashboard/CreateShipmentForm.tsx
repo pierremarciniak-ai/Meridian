@@ -165,6 +165,36 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
       </CardHeader>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Field label="Modèle de paiement" hint={transactionModelHints[model]}>
+          <select className="field-select" value={model} onChange={(e) => setModel(Number(e.target.value) as TransactionModel)}>
+            {Object.values(TransactionModel)
+              .filter((v) => typeof v === "number")
+              .map((v) => (
+                <option key={v} value={v}>
+                  {transactionModelLabels[v as TransactionModel]}
+                </option>
+              ))}
+          </select>
+        </Field>
+
+        {isFreeModel && (
+          <Field label="Versement de l'acompte">
+            <select
+              className="field-select"
+              value={advancePaymentMode}
+              onChange={(e) => setAdvancePaymentMode(Number(e.target.value) as AdvancePaymentMode)}
+            >
+              {Object.values(AdvancePaymentMode)
+                .filter((v) => typeof v === "number")
+                .map((v) => (
+                  <option key={v} value={v}>
+                    {advancePaymentModeLabels[v as AdvancePaymentMode]}
+                  </option>
+                ))}
+            </select>
+          </Field>
+        )}
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Devise de règlement">
             <select
@@ -199,42 +229,12 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
           </Field>
         </div>
 
-        <Field label="Modèle de paiement" hint={transactionModelHints[model]}>
-          <select className="field-select" value={model} onChange={(e) => setModel(Number(e.target.value) as TransactionModel)}>
-            {Object.values(TransactionModel)
-              .filter((v) => typeof v === "number")
-              .map((v) => (
-                <option key={v} value={v}>
-                  {transactionModelLabels[v as TransactionModel]}
-                </option>
-              ))}
-          </select>
-        </Field>
-
-        {isFreeModel && (
-          <Field label="Versement de l'acompte">
-            <select
-              className="field-select"
-              value={advancePaymentMode}
-              onChange={(e) => setAdvancePaymentMode(Number(e.target.value) as AdvancePaymentMode)}
-            >
-              {Object.values(AdvancePaymentMode)
-                .filter((v) => typeof v === "number")
-                .map((v) => (
-                  <option key={v} value={v}>
-                    {advancePaymentModeLabels[v as AdvancePaymentMode]}
-                  </option>
-                ))}
-            </select>
-          </Field>
-        )}
-
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
             label={`Montant total (${symbol || "…"})`}
             hint={
               feesEstimate > 0n
-                ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de gestion, à payer par l'acheteur à la double signature (en plus du dépôt).`
+                ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de service, à payer par l'acheteur à la double signature (en plus du dépôt).`
                 : undefined
             }
           >

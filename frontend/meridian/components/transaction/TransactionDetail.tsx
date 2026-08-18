@@ -90,7 +90,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>{tx.billNumber || "Dossier sans référence"}</CardTitle>
+            <CardTitle>Numéro de bon de commande: {tx.billNumber || "Dossier sans référence"}</CardTitle>
             <div className="mt-2">
               <CopyChip label="Référence du contrat" value={id} chars={8} />
             </div>

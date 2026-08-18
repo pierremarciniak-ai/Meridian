@@ -1,4 +1,5 @@
 import { defineChain, sepolia as sepoliaOfficial } from "@reown/appkit/networks";
+import { useChainId } from "wagmi";
 
 // Contrairement à l'ancienne version (un seul réseau "actif" piloté par
 // NEXT_PUBLIC_CHAIN_ID), l'app supporte désormais plusieurs réseaux
@@ -52,3 +53,15 @@ export const sepolia = defineChain({
 // lib/web3/contracts.ts suffit à l'activer partout, sans toucher aux
 // composants consommateurs (voir useMeridianAddress).
 export const supportedChains = [hardhatLocal, sepolia] as const;
+
+// Symbole de la devise native du réseau connecté (ETH sur Hardhat local et
+// Sepolia aujourd'hui, AVAX le jour où avalancheFuji rejoint
+// supportedChains ci-dessus, sans rien à changer côté appelant) — utilisé
+// pour le rappel "prévoir de quoi payer le gas" sur la page d'accueil.
+// Retombe sur "ETH" si le réseau connecté n'est pas dans supportedChains
+// (mauvais réseau, ou wallet non connecté).
+export function useNativeCurrencySymbol(): string {
+  const chainId = useChainId();
+  const chain = supportedChains.find((c) => c.id === chainId);
+  return chain?.nativeCurrency.symbol ?? "ETH";
+}

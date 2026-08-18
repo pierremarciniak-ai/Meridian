@@ -30,7 +30,7 @@ export type OnChainTransaction = {
   currentEditor: UserType;
   signedByBuyer: boolean;
   signedBySeller: boolean;
-  // Frais de gestion : prélevés en une fois chez l'acheteur (100% du
+  // Frais de service : prélevés en une fois chez l'acheteur (100% du
   // montant) dès que les deux signatures sont réunies — voir checkSignatures
   // / transfertFeesFromBuyer dans InternalFunctions.sol, pas au dépôt.
   // feesAmount/netAmountDue sont figés à ce moment précis (donc fiables même

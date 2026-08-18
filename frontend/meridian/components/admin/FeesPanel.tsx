@@ -22,7 +22,7 @@ export function FeesPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Frais de gestion</CardTitle>
+        <CardTitle>Frais de service</CardTitle>
       </CardHeader>
       <div className="divide-y" style={{ borderColor: "var(--color-navy-700)" }}>
         <AddressSetterRow
