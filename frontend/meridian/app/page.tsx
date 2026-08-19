@@ -18,16 +18,16 @@ export default function Home() {
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-12">
       <section className="flex flex-col gap-3">
-        <span className="label-caps flex items-center gap-2 text-accent">
+        {/* <span className="label-caps flex items-center gap-2 text-accent">
           <WavesIcon className="h-4 w-4" />
           Escrow commercial on-chain
-        </span>
+        </span> */}
         <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-foam sm:text-4xl">
           Sécurisez vos transactions de fret.
         </h1>
         <p className="max-w-2xl text-sm text-muted sm:text-base">
-          Meridian bloque les fonds de l&apos;acheteur sur la blockchain dès la signature des deux parties, et ne les
-          libère au fournisseur qu&apos;une fois les conditions convenues remplies.
+          Meridian permet de signer une transaction et de bloquer les fonds sur la blockchain. Une fois les conditions 
+          convenues remplies les fonds sont libérés au fournisseur.
         </p>
       </section>
 

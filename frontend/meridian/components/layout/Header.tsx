@@ -46,7 +46,7 @@ export function Header() {
           </span>
           <span className="flex flex-col leading-none">
             <span className="text-base font-semibold tracking-wide text-foam">MERIDIAN</span>
-            <span className="label-caps mt-1">Escrow de fret maritime</span>
+            <span className="label-caps mt-1">Escrow on-chain de fret maritime</span>
           </span>
         </Link>
 
