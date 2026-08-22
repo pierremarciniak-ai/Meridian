@@ -159,6 +159,18 @@ export function DetailsForm({
           </Field>
         )}
 
+        <Field label="Modèle de paiement">
+          <select className="field-select" value={model} onChange={(e) => setModel(Number(e.target.value) as TransactionModel)}>
+            {Object.values(TransactionModel)
+              .filter((v) => typeof v === "number")
+              .map((v) => (
+                <option key={v} value={v}>
+                  {transactionModelLabels[v as TransactionModel]}
+                </option>
+              ))}
+          </select>
+        </Field>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Devise">
             <select className="field-select" value={currency} onChange={(e) => setCurrency(Number(e.target.value) as Currency)}>
@@ -183,18 +195,6 @@ export function DetailsForm({
             </select>
           </Field>
         </div>
-
-        <Field label="Modèle de paiement">
-          <select className="field-select" value={model} onChange={(e) => setModel(Number(e.target.value) as TransactionModel)}>
-            {Object.values(TransactionModel)
-              .filter((v) => typeof v === "number")
-              .map((v) => (
-                <option key={v} value={v}>
-                  {transactionModelLabels[v as TransactionModel]}
-                </option>
-              ))}
-          </select>
-        </Field>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field

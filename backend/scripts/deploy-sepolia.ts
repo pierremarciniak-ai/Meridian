@@ -98,9 +98,10 @@ async function main() {
   // --- 7. Oracle de position de conteneur (adresse fixe) ---
   await (await meridian.setContainerPositionOracleAddress(containerPositionOracleAddress)).wait();
 
-  // --- 8. Wallet de frais (adresse fixe) ---
+  // --- 8. Configuration du wallet de frais (backend) ---
   await (await meridian.setFeesWalletAddress(feesWalletAddress)).wait();
-  await (await meridian.setFeesAmount(2000000)).wait(); // 2000000 = 2 USDC/USDT/EURC (6 décimales)
+  await (await meridian.setFeesRateBps(1000)).wait(); // ex: 250 = 2,50 %, sur 10000
+  console.log("FeesRateBps set: ", await meridian.feesRateBps());
 
   // --- 9. Transfert de propriété vers l'admin final, si différent du déployeur ---
   if (adminAddress && adminAddress.toLowerCase() !== deployer.address.toLowerCase()) {
