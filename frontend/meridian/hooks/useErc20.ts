@@ -4,10 +4,13 @@ import type { Address } from "viem";
 import { useReadContract, useReadContracts } from "wagmi";
 import { erc20Abi } from "@/lib/web3/abi/erc20";
 
-// tokenAddress est désormais résolu on-chain (useTokenAddresses) plutôt que
-// depuis l'env, donc potentiellement undefined le temps du premier fetch —
-// ces trois hooks se désactivent proprement (query.enabled) dans ce cas au
-// lieu d'envoyer une adresse invalide.
+/**
+ * Lit décimales et symbole d'un token ERC-20. `tokenAddress` est résolu
+ * on-chain (voir `useTokenAddresses`) plutôt que depuis l'env, donc
+ * potentiellement `undefined` le temps du premier fetch — ce hook, comme
+ * `useErc20Balance`/`useErc20Allowance` ci-dessous, se désactive proprement
+ * (`query.enabled`) dans ce cas plutôt que d'envoyer une adresse invalide.
+ */
 export function useErc20Meta(tokenAddress: Address | undefined) {
   const { data, isLoading } = useReadContracts({
     contracts: [

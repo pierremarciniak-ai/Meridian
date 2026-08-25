@@ -5,14 +5,17 @@ import type { Address } from "viem";
 import { usePublicClient, useReadContracts } from "wagmi";
 import { sanctionsListAbi } from "@/lib/web3/abi/sanctionsList";
 
-// SanctionsList ne permet aucune énumération directe (juste un mapping avec
-// un compteur de génération pour un reset en O(1) — voir unSetAllSanctioned
-// côté contrat). On reconstruit donc la liste des adresses actuellement
-// sanctionnées en deux temps : (1) rejouer l'historique des events
-// AddressSanctioned pour obtenir l'ensemble des adresses ayant un jour été
-// sanctionnées (même patron que useMyShipmentIds pour les contrats), puis
-// (2) vérifier le statut réel de chacune via isSanctioned, qui lui tient
-// compte des levées individuelles et des unSetAllSanctioned.
+/**
+ * Reconstruit la liste des adresses actuellement sanctionnées sur un oracle
+ * SanctionsList, qui ne permet aucune énumération directe (juste un mapping
+ * avec un compteur de génération pour un reset en O(1) — voir
+ * `unSetAllSanctioned` côté contrat). Procède en deux temps : (1) rejoue
+ * l'historique des events `AddressSanctioned` pour obtenir l'ensemble des
+ * adresses ayant un jour été sanctionnées (même patron que
+ * `useMyShipmentIds`), puis (2) vérifie le statut réel de chacune via
+ * `isSanctioned`, qui tient compte des levées individuelles et de
+ * `unSetAllSanctioned`.
+ */
 export function useSanctionedAddresses(oracleAddress: Address | undefined) {
   const publicClient = usePublicClient();
   const [candidates, setCandidates] = useState<Address[]>([]);

@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 
 const STORAGE_KEY = "meridian:dev:short-deadline";
 
-// Préférence de dev persistée en local. Pas de contexte global : chaque
-// formulaire la relit à son montage (ex. en naviguant depuis /dev-tools vers
-// / ou vers un contrat), aucun besoin de synchronisation en direct entre
-// composants déjà montés.
+/**
+ * Préférence de dev persistée en local (mode "échéance courte"). Pas de
+ * contexte global : chaque formulaire la relit à son montage (ex. en
+ * naviguant depuis /dev-tools vers / ou vers un contrat), aucun besoin de
+ * synchronisation en direct entre composants déjà montés.
+ */
 export function useShortDeadlineMode() {
   const [enabled, setEnabled] = useState(false);
 

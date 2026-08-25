@@ -13,9 +13,11 @@ type WriteArgs = {
 
 type Stage = "idle" | "signing" | "confirming" | "success" | "error";
 
-// Cherche un champ .data (chaîne hex, ou {data: chaîne hex} imbriqué — la
-// forme que renvoie Hardhat) en remontant la chaîne de .cause, et tente de
-// le décoder avec l'ABI de l'appel en cours.
+/**
+ * Cherche un champ `.data` (chaîne hex, ou `{data: chaîne hex}` imbriqué —
+ * la forme que renvoie Hardhat) en remontant la chaîne de `.cause`, et tente
+ * de le décoder avec l'ABI de l'appel en cours.
+ */
 function decodeRevertFromCauseChain(err: unknown, abi: Abi): string | undefined {
   let cause: unknown = err;
   for (let i = 0; cause && typeof cause === "object" && i < 10; i++) {
@@ -36,13 +38,16 @@ function decodeRevertFromCauseChain(err: unknown, abi: Abi): string | undefined 
   return undefined;
 }
 
-// viem décode déjà le message d'un require() côté contrat, mais le range
-// dans .shortMessage sur une DEUXIÈME ligne (ex. 'The contract function "x"
-// reverted with the following reason:\nNothing to withdraw') : un
-// `.split("\n")[0]` naïf ne gardait donc que la phrase générique et
-// escamotait le message du require. On va plutôt chercher l'erreur de
-// revert décodée dans la chaîne de causes (`.walk`) et lire directement sa
-// raison — ou, pour un custom error (pas de string), son nom + arguments.
+/**
+ * Extrait un message de revert lisible depuis une erreur viem. viem décode
+ * déjà le message d'un `require()` côté contrat, mais le range dans
+ * `.shortMessage` sur une deuxième ligne (ex. `'The contract function "x"
+ * reverted with the following reason:\nNothing to withdraw'`) : un
+ * `.split("\n")[0]` naïf ne garderait donc que la phrase générique. On
+ * cherche plutôt l'erreur de revert décodée dans la chaîne de causes
+ * (`.walk`) et on lit directement sa raison — ou, pour un custom error (pas
+ * de string), son nom + arguments.
+ */
 function extractErrorMessage(err: unknown, abi?: Abi): string {
   if (err instanceof BaseError) {
     const revertError = err.walk((e) => e instanceof ContractFunctionRevertedError) as
@@ -76,10 +81,12 @@ function extractErrorMessage(err: unknown, abi?: Abi): string {
   return raw.split("\n")[0];
 }
 
-// Un receipt miné avec status "reverted" (ex. l'échéance a expiré entre la
-// simulation et l'inclusion du bloc, ou un état a changé entre-temps) rejoue
-// le même appel en lecture seule au bloc de la transaction pour en extraire
-// la vraie raison de revert, plutôt que d'afficher un message générique.
+/**
+ * Rejoue en lecture seule, au bloc de la transaction, un appel miné avec
+ * `status: "reverted"` (ex. l'échéance a expiré entre la simulation et
+ * l'inclusion du bloc, ou un état a changé entre-temps), pour en extraire la
+ * vraie raison de revert plutôt que d'afficher un message générique.
+ */
 async function fetchRevertReason(
   publicClient: NonNullable<ReturnType<typeof usePublicClient>>,
   hash: `0x${string}`,
@@ -100,10 +107,12 @@ async function fetchRevertReason(
   }
 }
 
-// Enrobe useWriteContract + useWaitForTransactionReceipt : une seule fonction
-// `execute` à appeler depuis un bouton, un état de cycle de vie unique
-// (signing -> confirming -> success/error) et un message d'erreur lisible
-// extrait du revert on-chain.
+/**
+ * Enrobe `useWriteContract` + `useWaitForTransactionReceipt` derrière une
+ * seule fonction `execute` à appeler depuis un bouton : un état de cycle de
+ * vie unique (`signing` -> `confirming` -> `success`/`error`) et un message
+ * d'erreur lisible extrait du revert on-chain.
+ */
 export function useContractAction() {
   const { address } = useAccount();
   const publicClient = usePublicClient();

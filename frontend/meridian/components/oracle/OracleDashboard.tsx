@@ -6,6 +6,7 @@ import { AlertIcon, CompassIcon } from "@/components/icons";
 import { Card } from "@/components/ui/Card";
 import { useIsContainerPositionOracle } from "@/hooks/useIsContainerPositionOracle";
 
+/** Tableau de bord oracle, avec contrôle d'accès : réservé au wallet configuré comme oracle de position de conteneur. */
 export function OracleDashboard() {
   const { isConnected } = useAccount();
   const { isContainerPositionOracle, isLoading } = useIsContainerPositionOracle();

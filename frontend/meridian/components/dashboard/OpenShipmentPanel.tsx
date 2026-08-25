@@ -9,11 +9,14 @@ import { Field } from "@/components/ui/Field";
 
 const TRANSACTION_ID_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-// Navigation pure (aucun appel de contrat) : "Mes contrats" ne liste que les
-// contrats où le wallet connecté est acheteur ou vendeur, donc quiconque a
-// juste besoin d'ouvrir un contrat existant sans être ni l'un ni l'autre
-// (typiquement le wallet configuré comme oracle de position de conteneur)
-// n'avait aucun moyen d'y accéder depuis l'accueil.
+/**
+ * Navigation pure vers un contrat par référence (aucun appel de contrat) :
+ * "Mes contrats" ne liste que les contrats où le wallet connecté est
+ * acheteur ou vendeur, donc quiconque a juste besoin d'ouvrir un contrat
+ * existant sans être ni l'un ni l'autre (typiquement le wallet configuré
+ * comme oracle de position de conteneur) n'a autrement aucun moyen d'y
+ * accéder depuis l'accueil.
+ */
 export function OpenShipmentPanel() {
   const router = useRouter();
   const [transactionId, setTransactionId] = useState("");

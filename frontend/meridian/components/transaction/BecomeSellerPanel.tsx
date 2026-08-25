@@ -10,6 +10,7 @@ import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
+/** Formulaire d'acceptation d'un contrat par le fournisseur (`createTransaction`), avec vérification du numéro de bon de commande. */
 export function BecomeSellerPanel({ transactionId, expectedBillNumber, onAccepted }: { transactionId: `0x${string}`; expectedBillNumber: string; onAccepted: () => void }) {
   const { isConnected } = useAccount();
   const meridianAddress = useMeridianAddress();

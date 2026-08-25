@@ -1,9 +1,11 @@
-// Détaille le mécanisme renvoyé par l'astérisque accolé au montant de frais
-// de service dans CreateShipmentForm et DetailsForm — sorti du hint du champ
-// "Montant total" pour ne pas l'alourdir avec une phrase complète à chaque
-// frappe. Contenu volontairement identique acheteur/fournisseur : les deux
-// ont besoin de comprendre le même mécanisme (voir transfertFeesFromBuyer
-// dans InternalFunctions.sol).
+/**
+ * Détaille le mécanisme renvoyé par l'astérisque accolé au montant de frais
+ * de service dans CreateShipmentForm et DetailsForm — sorti du hint du
+ * champ "Montant total" pour ne pas l'alourdir avec une phrase complète à
+ * chaque frappe. Contenu volontairement identique acheteur/fournisseur : les
+ * deux ont besoin de comprendre le même mécanisme (voir
+ * `transfertFeesFromBuyer` dans InternalFunctions.sol).
+ */
 export function FeesExplainerNote() {
   return (
     <p className="info-note">

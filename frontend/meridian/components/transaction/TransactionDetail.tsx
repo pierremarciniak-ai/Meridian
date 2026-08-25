@@ -33,17 +33,25 @@ import { useIsContainerPositionOracle } from "@/hooks/useIsContainerPositionOrac
 import { useMeridianTransaction } from "@/hooks/useMeridianTransaction";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 
+/**
+ * Page d'un contrat : oriente vers le bon panneau (acceptation, détails,
+ * dépôt, retrait, rollback, NFT, oracle) selon `workflowStatus` et le rôle
+ * du wallet connecté.
+ */
 export function TransactionDetail({ id }: { id: `0x${string}` }) {
   const { address } = useAccount();
   const { data: tx, isLoading, refetch } = useMeridianTransaction(id);
   const { tokenAddresses } = useTokenAddresses();
   const { decimals, symbol } = useErc20Meta(tokenAddresses[tx ? tx.currency : Currency.USDC]);
   const { isContainerPositionOracle } = useIsContainerPositionOracle();
-  // Attestation de position à la volée (gratuite, sans écriture on-chain) :
-  // ne sert que dans l'état Signed, où l'éligibilité rollback/retrait dépend
-  // de containerPositionStatus. Une seule requête ici, partagée avec
-  // RollbackPanel (WithdrawPanel gère la sienne en interne, côté fournisseur
-  // le panneau est toujours affiché quel que soit l'état de la position).
+  /**
+   * Attestation de position à la volée (gratuite, sans écriture on-chain) :
+   * ne sert que dans l'état Signed, où l'éligibilité rollback/retrait
+   * dépend de `containerPositionStatus`. Une seule requête ici, partagée
+   * avec RollbackPanel (WithdrawPanel gère la sienne en interne, côté
+   * fournisseur le panneau est toujours affiché quel que soit l'état de la
+   * position).
+   */
   const {
     data: attestation,
     refetch: refetchAttestation,

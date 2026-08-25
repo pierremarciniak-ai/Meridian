@@ -50,6 +50,12 @@ function PartyLine({ label, address, you }: { label: string; address: string; yo
   );
 }
 
+/**
+ * Vue d'ensemble d'un contrat (parties, logistique, conditions financières,
+ * règlement) et flux de signature. La signature acheteur peut exiger une
+ * approbation ERC-20 préalable pour les frais de service — voir
+ * `feesEstimate` ci-dessous.
+ */
 export function TransactionSummary({
   transactionId,
   tx,
@@ -78,14 +84,16 @@ export function TransactionSummary({
   const alreadySigned = role === "buyer" ? tx.signedByBuyer : role === "seller" ? tx.signedBySeller : false;
   const myTurn = isCurrentEditor(tx, role);
 
-  // Les frais ne sont plus figés on-chain (tx.feesAmount/netAmountDue restent
-  // à 0) tant que les deux signatures ne sont pas réunies : ce calcul en
-  // temps réel, sur totalAmount et feesRateBps actuels, sert à la fois à
-  // l'affichage avant signature et à dimensionner l'allowance à demander à
-  // l'acheteur. currentEditor démarre toujours à Seller (voir
-  // InternalFunctions.sol) : c'est donc systématiquement la signature de
-  // l'acheteur qui complète le contrat et déclenche le prélèvement — seul ce
-  // rôle a besoin d'un flow d'approbation ici, jamais le fournisseur.
+  /**
+   * Les frais ne sont pas figés on-chain (`tx.feesAmount`/`netAmountDue`
+   * restent à 0) tant que les deux signatures ne sont pas réunies : ce
+   * calcul en temps réel, sur `totalAmount` et `feesRateBps` actuels, sert à
+   * la fois à l'affichage avant signature et à dimensionner l'allowance à
+   * demander à l'acheteur. `currentEditor` démarre toujours à Seller (voir
+   * InternalFunctions.sol) : c'est donc systématiquement la signature de
+   * l'acheteur qui complète le contrat et déclenche le prélèvement — seul ce
+   * rôle a besoin d'un flow d'approbation ici, jamais le fournisseur.
+   */
   const feesEstimate = tx.feesPaid ? tx.feesAmount : estimateFees(tx.totalAmount, feesRateBps).feesAmount;
 
   const buyerAllowanceQuery = useErc20Allowance(tokenAddress, tx.buyer.userAddress, meridianAddress);

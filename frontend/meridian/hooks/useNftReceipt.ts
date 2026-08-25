@@ -8,10 +8,13 @@ import { meridianNftAbi } from "@/lib/web3/abi/meridianNft";
 import { useMeridianAddress, useMeridianDeployBlock } from "@/lib/web3/contracts";
 import { getContractEventsChunked } from "@/lib/web3/eventLogs";
 
-// Meridian n'expose aucun getter "tokenId pour cette transaction/ce rôle" :
-// on le retrouve en rejouant l'event TransactionNFTMinted (transactionID et
-// userAddress sont tous deux indexés), comme useMyShipmentIds le fait déjà
-// pour retrouver les transactions d'un compte.
+/**
+ * Retrouve le tokenId du reçu NFT d'une transaction/d'un rôle. Meridian
+ * n'expose aucun getter dédié : on le retrouve en rejouant l'event
+ * `TransactionNFTMinted` (transactionID et userAddress sont tous deux
+ * indexés), comme `useMyShipmentIds` le fait pour les transactions d'un
+ * compte.
+ */
 export function useNftTokenId(transactionId: Hex | undefined, userAddress: Address | undefined, enabled: boolean) {
   const publicClient = usePublicClient();
   const meridianAddress = useMeridianAddress();
@@ -53,9 +56,7 @@ export function useNftTokenId(transactionId: Hex | undefined, userAddress: Addre
   return { tokenId, isLoading };
 }
 
-// nftAddress vient de useMeridianNFTAddress (lecture on-chain) plutôt que de
-// la constante d'env : voir le commentaire de ce hook pour la raison
-// (divergence possible avec l'adresse réellement configurée sur Meridian).
+/** Lit la tokenURI d'un reçu NFT. `nftAddress` doit venir de `useMeridianNFTAddress` (lecture on-chain), pas d'une constante d'env — voir ce hook. */
 export function useNftTokenUri(nftAddress: Address | undefined, tokenId: bigint | undefined) {
   return useReadContract({
     address: nftAddress,

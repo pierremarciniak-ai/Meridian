@@ -4,12 +4,15 @@ import { AddressSetterRow } from "@/components/admin/AddressSetterRow";
 import { RateSetterRow } from "@/components/admin/RateSetterRow";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 
-// feesRateBps est un taux global en points de base (250 = 2,50 %) appliqué à
-// totalAmount au moment de la double signature de chaque contrat, quelle que
-// soit sa devise — voir checkSignatures/transfertFeesFromBuyer dans
-// InternalFunctions.sol. L'acheteur paie la totalité des frais ainsi
-// calculés ; le fournisseur en absorbe la moitié via un dépôt net réduit
-// d'autant (netAmountDue), sans virement séparé de sa part.
+/**
+ * Configuration des frais de service : wallet destinataire et taux
+ * (`feesRateBps`, en points de base, appliqué à `totalAmount` à la double
+ * signature de chaque contrat — voir `checkSignatures`/
+ * `transfertFeesFromBuyer` dans InternalFunctions.sol). L'acheteur paie la
+ * totalité des frais ainsi calculés ; le fournisseur en absorbe la moitié
+ * via un dépôt net réduit d'autant (`netAmountDue`), sans virement séparé
+ * de sa part.
+ */
 export function FeesPanel({
   feesWalletAddress,
   feesRateBps,

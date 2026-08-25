@@ -5,8 +5,7 @@ import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 import { Currency } from "@/lib/domain/enums";
 
-// Un seul multicall pour tout l'état "réglages" du contrat consommé par le
-// dashboard admin, plutôt qu'un useReadContract par valeur.
+/** Un seul multicall pour tout l'état "réglages" consommé par le dashboard admin, plutôt qu'un `useReadContract` par valeur. */
 export function useAdminState() {
   const meridianAddress = useMeridianAddress();
   const { data, isLoading, refetch } = useReadContracts({

@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/Card";
 import { useAdminState } from "@/hooks/useAdminState";
 import { useIsOwner } from "@/hooks/useIsOwner";
 
+/** Tableau de bord admin, avec contrôle d'accès : réservé au wallet connecté qui est le owner du contrat Meridian. */
 export function AdminDashboard() {
   const { isConnected } = useAccount();
   const { isOwner, isLoading: isOwnerLoading } = useIsOwner();

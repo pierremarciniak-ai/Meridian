@@ -5,6 +5,7 @@ import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 import { sameAddress } from "@/lib/domain/transaction";
 
+/** Indique si le wallet connecté est l'oracle de position de conteneur configuré sur Meridian. */
 export function useIsContainerPositionOracle() {
   const { address } = useAccount();
   const meridianAddress = useMeridianAddress();

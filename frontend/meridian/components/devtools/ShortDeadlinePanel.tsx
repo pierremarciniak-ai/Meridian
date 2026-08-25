@@ -4,12 +4,14 @@ import { ClockIcon } from "@/components/icons";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
 
-// Alternative au time-travel Hardhat (retiré : evm_setNextBlockTimestamp
-// n'existe que sur un nœud de dev, jamais sur un réseau réel comme Sepolia).
-// Ici, on ne triche pas avec l'horloge de la chaîne : on permet juste de
-// fixer une échéance d'annulation proche (minutes) au lieu d'une date seule,
-// pour pouvoir tester rollbackDeposit en attendant réellement quelques
-// minutes — fonctionne donc sur n'importe quel réseau, y compris Sepolia.
+/**
+ * Alternative au time-travel Hardhat (retiré : `evm_setNextBlockTimestamp`
+ * n'existe que sur un nœud de dev, jamais sur un réseau réel comme Sepolia).
+ * Ne triche pas avec l'horloge de la chaîne : permet juste de fixer une
+ * échéance d'annulation proche (minutes) au lieu d'une date seule, pour
+ * pouvoir tester `rollbackDeposit` en attendant réellement quelques minutes
+ * — fonctionne donc sur n'importe quel réseau, y compris Sepolia.
+ */
 export function ShortDeadlinePanel() {
   const [enabled, setEnabled] = useShortDeadlineMode();
 

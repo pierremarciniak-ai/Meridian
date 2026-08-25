@@ -42,9 +42,14 @@ function nowPlusMinutes(minutes: number) {
   return unixToDateTimeInput(Math.floor(Date.now() / 1000) + minutes * 60);
 }
 
-// onCreatedChange permet à la page d'ajuster sa mise en page une fois le
-// contrat créé (masquer "Espace fournisseur" et laisser "Contrat créé"
-// prendre toute la largeur) sans dupliquer l'état `created` côté page.
+/**
+ * Formulaire de création d'un contrat par l'acheteur
+ * (`initializeTransaction`) : à la confirmation, affiche la référence et le
+ * bon de commande à transmettre au fournisseur. `onCreatedChange` permet à
+ * la page d'ajuster sa mise en page une fois le contrat créé (masquer
+ * "Espace fournisseur" et laisser "Contrat créé" prendre toute la largeur)
+ * sans dupliquer l'état `created` côté page.
+ */
 export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (created: boolean) => void }) {
   const router = useRouter();
   const { isConnected } = useAccount();
@@ -94,17 +99,21 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
   const totalAmountParsed = totalAmountInput ? parseAmountInput(totalAmountInput, decimals) : 0n;
   const needsAdvanceInput = model !== TransactionModel.FullLocked;
   const isFreeModel = model === TransactionModel.Free;
-  // Pour PartialLocked/PartialImmediate, le contrat applique lui-même un
-  // pourcentage (30 %/15 %) à la valeur qu'on lui passe comme advanceAmount :
-  // pour que l'acompte réellement stocké corresponde au montant affiché, on
-  // lui transmet le montant total (qu'il réduira au pourcentage voulu) plutôt
-  // que de lui envoyer directement le montant déjà calculé — sinon le
-  // pourcentage serait appliqué deux fois.
+  /**
+   * Pour PartialLocked/PartialImmediate, le contrat applique lui-même un
+   * pourcentage (30 %/15 %) à la valeur qu'on lui passe comme
+   * `advanceAmount` : pour que l'acompte réellement stocké corresponde au
+   * montant affiché, on lui transmet le montant total (qu'il réduira au
+   * pourcentage voulu) plutôt que le montant déjà calculé — sinon le
+   * pourcentage serait appliqué deux fois.
+   */
   const autoAdvanceAmount = estimateAdvanceAmount(model, totalAmountParsed);
-  // Recalculé à chaque frappe (totalAmountParsed en dépend) : estimation en
-  // temps réel, le montant qui fera foi étant celui calculé on-chain à la
-  // double signature (voir TransactionSummary), sur le totalAmount alors en
-  // vigueur.
+  /**
+   * Recalculé à chaque frappe (`totalAmountParsed` en dépend) : estimation
+   * en temps réel, le montant qui fera foi étant celui calculé on-chain à
+   * la double signature (voir TransactionSummary), sur le `totalAmount`
+   * alors en vigueur.
+   */
   const feesEstimate = estimateFees(totalAmountParsed, feesRateBps).feesAmount;
   const freeAdvanceParsed = isFreeModel ? parseAmountInput(advanceAmountInput, decimals) : 0n;
   const advanceTooHigh = isFreeModel && totalAmountParsed > 0n && freeAdvanceParsed >= totalAmountParsed;

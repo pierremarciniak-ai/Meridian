@@ -25,11 +25,19 @@ import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
-// Format ISO 6346 (numéro de conteneur maritime) : 4 lettres (code
-// propriétaire) suivies de 7 chiffres, collés, sans espace ni tiret — voir
-// le placeholder "MEDU1234567" ci-dessous.
+/**
+ * Format ISO 6346 (numéro de conteneur maritime) : 4 lettres (code
+ * propriétaire) suivies de 7 chiffres, collés, sans espace ni tiret — voir
+ * le placeholder "MEDU1234567" ci-dessous.
+ */
 const CONTAINER_REFERENCE_PATTERN = /^[A-Za-z]{4}\d{7}$/;
 
+/**
+ * Formulaire de négociation des détails d'un contrat
+ * (`saveTransactionDetailsSeller`/`saveTransactionDetailsBuyer`), verrouillé
+ * tant que ce n'est pas le tour de l'utilisateur (voir `isCurrentEditor`).
+ * Toute soumission réinitialise les deux signatures côté contrat.
+ */
 export function DetailsForm({
   transactionId,
   tx,
@@ -82,14 +90,19 @@ export function DetailsForm({
 
   const totalAmountParsed = totalAmountInput ? parseAmountInput(totalAmountInput, decimals) : 0n;
   const isFreeModel = model === TransactionModel.Free;
-  // Idem que sur le formulaire de création : pour PartialLocked/PartialImmediate
-  // le contrat applique lui-même un pourcentage à l'advanceAmount reçu, donc on
-  // lui transmet le montant total (et non le montant déjà calculé) pour que
-  // l'acompte stocké corresponde exactement à ce qui est affiché.
+  /**
+   * Idem que sur le formulaire de création : pour PartialLocked/
+   * PartialImmediate, le contrat applique lui-même un pourcentage à
+   * `advanceAmount` reçu, donc on lui transmet le montant total (et non le
+   * montant déjà calculé) pour que l'acompte stocké corresponde exactement
+   * à ce qui est affiché.
+   */
   const autoAdvanceAmount = estimateAdvanceAmount(model, totalAmountParsed);
-  // Recalculé à chaque frappe : même raison que dans CreateShipmentForm, une
-  // pure estimation en temps réel (le montant qui fait foi n'est calculé
-  // qu'à la double signature, voir TransactionSummary).
+  /**
+   * Recalculé à chaque frappe : pure estimation en temps réel, le montant
+   * qui fait foi n'étant calculé qu'à la double signature (voir
+   * TransactionSummary).
+   */
   const { feesAmount: feesEstimate } = estimateFees(totalAmountParsed, feesRateBps);
   const myTurn = isCurrentEditor(tx, role);
   const containerReferenceValid = CONTAINER_REFERENCE_PATTERN.test(containerReference);

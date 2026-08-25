@@ -10,6 +10,7 @@ import { WorkflowStatus } from "@/lib/domain/enums";
 import { isCurrentEditor, pendingActionReason, sameAddress } from "@/lib/domain/transaction";
 import { useMyShipments } from "@/hooks/useMyShipments";
 
+/** Liste "Mes contrats" (acheteur ou fournisseur), avec recherche et bandeau "N contrat(s) nécessite(nt) une action". */
 export function MyShipmentsList() {
   const { address, isConnected } = useAccount();
   const { shipments, isLoading, error, refresh } = useMyShipments(address);
@@ -21,10 +22,12 @@ export function MyShipmentsList() {
     return shipments.filter(({ id, tx }) => id.toLowerCase().includes(q) || tx.billNumber.toLowerCase().includes(q));
   }, [shipments, query]);
 
-  // Nombre de contrats pour lesquels le wallet connecté (acheteur ou
-  // fournisseur) a une action disponible : dépôt, retrait, ou signature en
-  // attente — mêmes conditions que les bulles de ShipmentRow, pas de logique
-  // dupliquée.
+  /**
+   * Nombre de contrats pour lesquels le wallet connecté (acheteur ou
+   * fournisseur) a une action disponible : dépôt, retrait, ou signature en
+   * attente — mêmes conditions que les bulles de ShipmentRow, pas de
+   * logique dupliquée.
+   */
   const pendingCount = useMemo(() => {
     if (!address) return 0;
     return shipments.reduce((count, { tx }) => {

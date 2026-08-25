@@ -8,10 +8,13 @@ export type NftMetadata = {
 
 const DATA_URI_PREFIX = "data:application/json;base64,";
 
-// buildTokenURI (MeridianNFT.sol) encode le JSON en UTF-8 avant base64 : on
-// décode donc via TextDecoder plutôt qu'un simple atob(), qui interprète le
-// résultat en Latin1 et corromprait tout caractère accentué saisi par
-// l'utilisateur (billNumber, containerReference).
+/**
+ * Décode une tokenURI NFT (data URI JSON base64, voir `buildTokenURI` dans
+ * MeridianNFT.sol). Passe par `TextDecoder` plutôt qu'un simple `atob()`,
+ * qui interprète le résultat en Latin1 et corromprait tout caractère
+ * accentué saisi par l'utilisateur (billNumber, containerReference) — le
+ * contrat encode le JSON en UTF-8 avant base64.
+ */
 export function decodeTokenUri(uri: string | undefined): NftMetadata | undefined {
   if (!uri || !uri.startsWith(DATA_URI_PREFIX)) return undefined;
   try {

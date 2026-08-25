@@ -10,12 +10,13 @@ import { useMeridianAddress } from "@/lib/web3/contracts";
 
 export type Shipment = { id: Hex; tx: OnChainTransaction };
 
-// Charge, en un seul multicall, l'état complet de chaque contrat où le
-// portefeuille connecté est acheteur ou fournisseur (cf. useMyShipmentIds). Sert
-// de base à la fois à la liste "Mes contrats" et à sa barre de recherche :
-// comme l'ensemble récupéré est déjà scopé au portefeuille connecté, une
-// recherche dessus ne peut jamais faire remonter le contrat de quelqu'un
-// d'autre.
+/**
+ * Charge, en un seul multicall, l'état complet de chaque contrat où le
+ * portefeuille connecté est acheteur ou fournisseur (cf. `useMyShipmentIds`).
+ * Sert de base à la liste "Mes contrats" et à sa barre de recherche : comme
+ * l'ensemble récupéré est déjà scopé au portefeuille connecté, une recherche
+ * dessus ne peut jamais faire remonter le contrat de quelqu'un d'autre.
+ */
 export function useMyShipments(account: Address | undefined) {
   const { ids, isLoading: idsLoading, error, refresh: refreshIds } = useMyShipmentIds(account);
   const meridianAddress = useMeridianAddress();

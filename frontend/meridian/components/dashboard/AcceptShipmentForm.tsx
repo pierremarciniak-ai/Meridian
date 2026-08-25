@@ -14,10 +14,13 @@ import { useMeridianAddress } from "@/lib/web3/contracts";
 
 const TRANSACTION_ID_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-// Contrairement à un simple "suivre un contrat" (retiré volontairement pour
-// ne pas permettre de consulter n'importe quelle transaction depuis le
-// tableau de bord), ce formulaire n'ouvre le contrat qu'après acceptation
-// effective en tant que fournisseur.
+/**
+ * Formulaire d'acceptation d'un contrat par référence + bon de commande
+ * (`createTransaction`). Contrairement à un simple "suivre un contrat"
+ * (retiré volontairement pour ne pas permettre de consulter n'importe
+ * quelle transaction depuis le tableau de bord), n'ouvre le contrat qu'après
+ * acceptation effective en tant que fournisseur.
+ */
 export function AcceptShipmentForm() {
   const router = useRouter();
   const { isConnected } = useAccount();

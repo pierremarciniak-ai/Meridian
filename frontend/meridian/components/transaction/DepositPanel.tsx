@@ -17,6 +17,12 @@ import { erc20Abi } from "@/lib/web3/abi/erc20";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
+/**
+ * Dépôt du prochain versement dû par l'acheteur (acompte ou solde restant),
+ * avec approbation ERC-20 préalable si nécessaire. Le dépôt du solde
+ * restant est en plus bloqué côté front tant que la condition de retrait du
+ * fournisseur n'est pas remplie (voir `isBalanceDeposit` ci-dessous).
+ */
 export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId: `0x${string}`; tx: OnChainTransaction; onDeposited: () => void }) {
   const { address } = useAccount();
   const meridianAddress = useMeridianAddress();

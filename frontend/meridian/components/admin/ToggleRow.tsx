@@ -7,6 +7,7 @@ import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
+/** Interrupteur générique pour les fonctions `onlyOwner` qui basculent un booléen (ex. `toggleMockSanctionsOracle`). */
 export function ToggleRow({
   label,
   hint,

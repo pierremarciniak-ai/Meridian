@@ -14,19 +14,19 @@ export function Header() {
   const { chainId, isConnected } = useAccount();
   const { isOwner } = useIsOwner();
   const { isContainerPositionOracle } = useIsContainerPositionOracle();
-  // Plusieurs réseaux sont désormais supportés simultanément (voir
-  // supportedChains) : "mauvais réseau" ne signifie plus "différent d'un
-  // seul réseau attendu", mais "aucun des réseaux supportés".
+  // Plusieurs réseaux sont supportés simultanément (voir supportedChains) :
+  // "mauvais réseau" signifie "aucun des réseaux supportés", pas "différent
+  // d'un seul réseau attendu".
   const onExpectedChain = !isConnected || supportedChains.some((chain) => chain.id === chainId);
   const pathname = usePathname();
 
-  // Un <Link> vers la route déjà affichée ne déclenche aucune navigation
-  // (Next.js réutilise la page telle quelle) : les états locaux du tableau
-  // de bord (ex. l'écran "Contrat créé" après une création) restent figés,
-  // et cliquer sur le logo depuis "/" n'a alors visiblement aucun effet. On
-  // force un rechargement complet dans ce cas précis pour repartir d'un
-  // tableau de bord propre, conformément à ce qu'on attend d'un clic sur le
-  // logo.
+  /**
+   * Force un rechargement complet quand on clique sur le logo depuis "/".
+   * Un `<Link>` vers la route déjà affichée ne déclenche aucune navigation
+   * (Next.js réutilise la page telle quelle) : les états locaux du tableau
+   * de bord (ex. l'écran "Contrat créé" après une création) resteraient
+   * sinon figés, rendant le clic visiblement sans effet.
+   */
   function handleLogoClick(event: MouseEvent<HTMLAnchorElement>) {
     if (pathname === "/") {
       event.preventDefault();

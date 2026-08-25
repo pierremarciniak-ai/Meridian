@@ -14,9 +14,12 @@ import { useErc20Meta } from "@/hooks/useErc20";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { erc20Abi } from "@/lib/web3/abi/erc20";
 
-// Les MockERC20 déployés en local exposent un mint() public, sans restriction
-// (voir contracts/mocks/MockERC20.sol) : un simple robinet suffit ici pour
-// tester le cycle de dépôt/retrait sans dépendre du script de déploiement.
+/**
+ * Robinet de jetons de test. Les MockERC20 déployés en local exposent un
+ * `mint()` public, sans restriction (voir contracts/mocks/MockERC20.sol) :
+ * un simple robinet suffit ici pour tester le cycle de dépôt/retrait sans
+ * dépendre du script de déploiement.
+ */
 export function FaucetPanel() {
   const { address, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();

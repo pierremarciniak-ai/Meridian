@@ -7,10 +7,14 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "./InternalFunctions.sol";
 
+/// @title Meridian
+/// @notice Escrow de transactions commerciales maritimes entre un acheteur et un fournisseur.
+/// @dev API externe uniquement ; toute la logique et le storage vivent dans InternalFunctions.
 contract Meridian is InternalFunctions, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
+    /// @notice Configure l'adresse du token ERC-20 utilisé pour une devise.
     function setTokenAddress(Currency _currency, address _tokenAddress) external onlyOwner {
         require(_tokenAddress != address(0), "Invalid token address");
         tokenAddresses[_currency] = IERC20(_tokenAddress);
@@ -18,6 +22,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit TokenAddressUpdated(_currency, _tokenAddress);
     }
 
+    /// @notice Configure l'adresse de l'oracle de sanctions réel.
     function setSanctionsOracleAddress(address _sanctionsOracle) external onlyOwner {
         require(_sanctionsOracle != address(0), "Invalid sanctions oracle address");
         sanctionsOracleAddress = _sanctionsOracle;
@@ -25,6 +30,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit SanctionsOracleAddressUpdated(_sanctionsOracle);
     }
 
+    /// @notice Configure l'adresse du contrat MeridianNFT utilisé pour les reçus.
     function setMeridianNFTAddress(address _meridianNFT) external onlyOwner {
         require(_meridianNFT != address(0), "Invalid Meridian NFT address");
         meridianNFTAddress = _meridianNFT;
@@ -32,6 +38,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit MeridianNFTAddressUpdated(_meridianNFT);
     }
 
+    /// @notice Configure l'adresse de l'oracle de position de conteneur.
     function setContainerPositionOracleAddress(address _containerPositionOracle) external onlyOwner {
         require(_containerPositionOracle != address(0), "Invalid container position oracle address");
         containerPositionOracleAddress = _containerPositionOracle;
@@ -39,12 +46,13 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit ContainerPositionOracleAddressUpdated(_containerPositionOracle);
     }
 
-    // Appelée directement par le wallet oracle backend (dépense son propre
-    // gas) — voir le commentaire sur containerPositionOracleAddress dans
-    // InternalFunctions.sol. Utile en dev/admin (ContainerPositionOraclePanel)
-    // ; en usage normal c'est plutôt applySignedContainerPosition (via
-    // withdrawFundsWithPositionUpdate/rollbackDepositWithPositionUpdate) qui
-    // écrit containerPositionStatus, payé par l'utilisateur.
+    /// @notice Enregistre directement la position d'un conteneur (appelée par le wallet oracle).
+    /// @dev Voir le commentaire sur containerPositionOracleAddress dans
+    /// InternalFunctions.sol : ce chemin dépense le gas du wallet oracle
+    /// lui-même, utile en dev/admin (ContainerPositionOraclePanel). En usage
+    /// normal, c'est plutôt applySignedContainerPosition (via
+    /// withdrawFundsWithPositionUpdate/rollbackDepositWithPositionUpdate,
+    /// payé par l'utilisateur) qui écrit containerPositionStatus.
     function reportContainerPosition(bytes32 _transactionID, ContainerPositionStatus _status) external
     onlyContainerPositionOracle onlySignedTransaction(_transactionID) {
         TransactionsList[_transactionID].containerPositionStatus = _status;
@@ -52,6 +60,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit ContainerPositionReported(_transactionID, _status);
     }
 
+    /// @notice Configure l'adresse de l'oracle de sanctions simulé (tests/démo).
     function setMockSanctionsOracleAddress(address _mockSanctionsOracle) external onlyOwner {
         require(_mockSanctionsOracle != address(0), "Invalid mock sanctions oracle address");
         mockSanctionsOracleAddress = _mockSanctionsOracle;
@@ -59,6 +68,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit MockSanctionsOracleAddressUpdated(_mockSanctionsOracle);
     }
 
+    /// @notice Bascule entre l'oracle de sanctions réel et simulé.
     function toggleMockSanctionsOracle(bool _actualSetting) external onlyOwner {
         if (mockSanctionsEnabled != _actualSetting) {
             mockSanctionsEnabled = _actualSetting;
@@ -67,10 +77,12 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         }
     }
 
+    /// @notice Transfère la propriété du contrat.
     function setNewOwner(address _newOwner) external onlyOwner {
         transferOwnership(_newOwner);
     }
 
+    /// @notice Configure le wallet destinataire des frais de service.
     function setFeesWalletAddress(address _feesWalletAddress) external onlyOwner {
         require(_feesWalletAddress != address(0), "Invalid fees wallet address");
         feesWalletAddress = _feesWalletAddress;
@@ -78,6 +90,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit FeesWalletAddressUpdated(_feesWalletAddress);
     }
 
+    /// @notice Configure le taux de frais de service, en points de base (sur 10000).
     function setFeesRateBps(uint16 _feesRateBps) external onlyOwner {
         require(_feesRateBps <= 10000, "Fee rate cannot exceed 100%");
         feesRateBps = _feesRateBps;
@@ -85,6 +98,12 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit FeesRateBpsUpdated(_feesRateBps);
     }
 
+    /// @notice Ouvre un nouveau dossier : l'appelant devient l'acheteur.
+    /// @dev Génère transactionID = keccak256(internalID, msg.sender).
+    /// currentEditor démarre à Seller : c'est donc le fournisseur qui doit
+    /// agir en premier (saveTransactionDetailsSeller puis
+    /// signTransactionSeller) une fois le dossier accepté via
+    /// createTransaction.
     function initializeTransaction(TransactionDetailsInput calldata _details, string calldata _billNumber) external
     onlyUnsanctioned(msg.sender) {
         internalID++;
@@ -115,11 +134,14 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit TransactionInitialized(_transactionID, msg.sender);
     }
 
+    /// @notice Accepte un dossier initialisé : l'appelant devient le fournisseur.
+    /// @dev _billNumber doit correspondre exactement à celui saisi par
+    /// l'acheteur à l'initialisation (comparé par hash).
     function createTransaction(bytes32 _transactionID, string calldata _billNumber) external
     onlyUnsanctioned(msg.sender) onlyInitializedTransaction(_transactionID) {
         require(_transactionID != bytes32(0), "Transaction ID cannot be zero");
         require(bytes(_billNumber).length > 0, "Bill number cannot be empty");
-        
+
         Transaction storage _transaction = TransactionsList[_transactionID];
 
         require(_transaction.buyer.userAddress != msg.sender, "Buyer cannot be the seller");
@@ -135,6 +157,9 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit TransactionCreated(_transactionID, msg.sender);
     }
 
+    /// @notice Enregistre les détails et la référence conteneur côté fournisseur.
+    /// @dev Réinitialise les deux signatures. Abandonne la transaction sans
+    /// revert si le fournisseur est détecté sanctionné.
     function saveTransactionDetailsSeller(bytes32 _transactionID, string calldata _containerReference,
     TransactionDetailsInput calldata _details) external onlySeller(_transactionID) onlyCreatedTransaction(_transactionID) {
 
@@ -161,6 +186,9 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         }
     }
 
+    /// @notice Enregistre les détails côté acheteur (contre-proposition).
+    /// @dev Réinitialise les deux signatures. Abandonne la transaction sans
+    /// revert si l'acheteur est détecté sanctionné.
     function saveTransactionDetailsBuyer(bytes32 _transactionID, TransactionDetailsInput calldata _details) external
     onlyBuyer(_transactionID) sellerInfosCompleted(_transactionID) onlyCreatedTransaction(_transactionID) {
 
@@ -183,18 +211,25 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         }
     }
 
+    /// @notice Signe la transaction côté fournisseur.
     function signTransactionSeller(bytes32 _transactionID) external nonReentrant onlySeller(_transactionID)
     sellerInfosCompleted(_transactionID) onlyCreatedTransaction(_transactionID) {
 
-        signTransaction(_transactionID, UserType.Seller);     
+        signTransaction(_transactionID, UserType.Seller);
     }
 
+    /// @notice Signe la transaction côté acheteur.
+    /// @dev Le fournisseur signant toujours en premier (voir
+    /// initializeTransaction), c'est cette fonction qui complète
+    /// systématiquement la double signature et déclenche le prélèvement des
+    /// frais (transfertFeesFromBuyer).
     function signTransactionBuyer(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID)
     sellerInfosCompleted(_transactionID) onlyCreatedTransaction(_transactionID) {
 
         signTransaction(_transactionID, UserType.Buyer);
     }
 
+    /// @notice Mint le reçu NFT de l'acheteur pour ce dossier.
     function mintTransactionNFTBuyer(bytes32 _transactionID) external onlyBuyer(_transactionID) onlySignedOrCompletedTransaction(_transactionID) {
         require(meridianNFTAddress != address(0), "Meridian NFT contract not configured");
 
@@ -207,6 +242,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit TransactionNFTMinted(_transactionID, _transaction.buyer.userType, _transaction.buyer.userAddress, tokenId);
     }
 
+    /// @notice Mint le reçu NFT du fournisseur pour ce dossier.
     function mintTransactionNFTSeller(bytes32 _transactionID) external onlySeller(_transactionID) onlySignedOrCompletedTransaction(_transactionID) {
         require(meridianNFTAddress != address(0), "Meridian NFT contract not configured");
 
@@ -217,8 +253,12 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         uint256 tokenId = mintTransactionNFT(_transactionID, _transaction.seller.userAddress);
 
         emit TransactionNFTMinted(_transactionID, _transaction.seller.userType, _transaction.seller.userAddress, tokenId);
-    }    
+    }
 
+    /// @notice Dépose le prochain versement dû (acompte ou solde restant).
+    /// @dev Le montant est calculé par calculateDepositAmount, jamais fourni
+    /// par l'appelant. Abandonne la transaction sans revert si l'une des
+    /// deux parties est détectée sanctionnée.
     function depositFunds(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID) onlySignedTransaction(_transactionID)
     {
         Transaction storage _transaction = TransactionsList[_transactionID];
@@ -241,7 +281,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
 
             _transaction.depositedAmount += _amountToDeposit;
             _transaction.pendingWithdrawalAmount += _amountToDeposit;
-            
+
             if (_transaction.depositedAmount >= _transaction.netAmountDue) {
                 _transaction.depositCompleted = true;
             }
@@ -252,32 +292,35 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         }
     }
 
+    /// @notice Retire les fonds disponibles vers le fournisseur.
     function withdrawFunds(bytes32 _transactionID) external nonReentrant onlySeller(_transactionID)
     onlySignedTransaction(_transactionID) {
         withdrawFundsCore(_transactionID);
     }
 
-    // Variante payée par le vendeur : applique d'abord une attestation de
-    // position signée par l'oracle (voir applySignedContainerPosition dans
-    // InternalFunctions.sol) puis enchaîne sur le même retrait que
-    // withdrawFunds — une seule transaction, un seul wallet à signer côté
-    // utilisateur, et le wallet oracle backend ne dépense jamais de gas.
+    /// @notice Variante de withdrawFunds qui applique d'abord une attestation de position signée.
+    /// @dev Voir applySignedContainerPosition dans InternalFunctions.sol :
+    /// une seule transaction, un seul wallet à signer côté utilisateur, et
+    /// le wallet oracle backend ne dépense jamais de gas.
     function withdrawFundsWithPositionUpdate(bytes32 _transactionID, ContainerPositionStatus _status, uint256 _deadline,
     bytes calldata _signature) external nonReentrant onlySeller(_transactionID) onlySignedTransaction(_transactionID) {
         applySignedContainerPosition(_transactionID, _status, _deadline, _signature);
         withdrawFundsCore(_transactionID);
     }
 
+    /// @notice Rembourse l'acheteur du montant en attente de retrait.
     function rollbackDeposit(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID) {
         rollbackDepositCore(_transactionID);
     }
 
+    /// @notice Variante de rollbackDeposit qui applique d'abord une attestation de position signée.
     function rollbackDepositWithPositionUpdate(bytes32 _transactionID, ContainerPositionStatus _status, uint256 _deadline,
     bytes calldata _signature) external nonReentrant onlyBuyer(_transactionID) {
         applySignedContainerPosition(_transactionID, _status, _deadline, _signature);
         rollbackDepositCore(_transactionID);
     }
 
+    /// @notice Retourne l'état complet d'un dossier.
     function getTransaction(bytes32 _transactionID) external view returns (Transaction memory) {
         return TransactionsList[_transactionID];
     }

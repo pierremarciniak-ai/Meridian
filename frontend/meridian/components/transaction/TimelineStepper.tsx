@@ -8,6 +8,7 @@ const STEPS: { status: WorkflowStatus; label: string }[] = [
   { status: WorkflowStatus.Finished, label: "Soldée" },
 ];
 
+/** Frise de progression du cycle de vie d'un contrat (Initiée → Acceptée → Signée → Soldée), ou un badge dédié si Abandonné. */
 export function TimelineStepper({ status }: { status: WorkflowStatus }) {
   if (status === WorkflowStatus.Aborted) {
     return (

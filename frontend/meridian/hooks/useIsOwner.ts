@@ -5,6 +5,7 @@ import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 import { sameAddress } from "@/lib/domain/transaction";
 
+/** Indique si le wallet connecté est le owner du contrat Meridian. */
 export function useIsOwner() {
   const { address } = useAccount();
   const meridianAddress = useMeridianAddress();

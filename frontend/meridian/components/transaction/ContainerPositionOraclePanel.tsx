@@ -12,11 +12,14 @@ import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
-// Réservé au wallet configuré comme containerPositionOracleAddress (voir
-// useIsContainerPositionOracle) : c'est un appel normal à une fonction déjà
-// restreinte on-chain, pas un raccourci qui contourne une protection — donc
-// utilisable aussi bien en local qu'en conditions réelles (Sepolia...), à la
-// différence des anciens outils basés sur des méthodes RPC de nœud de dev.
+/**
+ * Permet de reporter manuellement la position d'un conteneur
+ * (`reportContainerPosition`). Réservé au wallet configuré comme
+ * `containerPositionOracleAddress` (voir `useIsContainerPositionOracle`) :
+ * c'est un appel normal à une fonction déjà restreinte on-chain, pas un
+ * raccourci qui contourne une protection — donc utilisable aussi bien en
+ * local qu'en conditions réelles (Sepolia...).
+ */
 export function ContainerPositionOraclePanel({
   transactionId,
   tx,

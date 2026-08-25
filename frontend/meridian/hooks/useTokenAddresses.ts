@@ -6,10 +6,12 @@ import { Currency } from "@/lib/domain/enums";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
-// Lit les adresses de tokens (USDC/USDT/EURC) directement sur Meridian
-// plutôt que depuis l'env : modifiables on-chain via setTokenAddress (voir
-// TokenAddressesPanel), elles peuvent diverger silencieusement d'une valeur
-// figée au build — même raison que useMeridianNFTAddress (voir ce hook).
+/**
+ * Lit les adresses de tokens (USDC/USDT/EURC) directement sur Meridian
+ * plutôt que depuis l'env : modifiables on-chain via `setTokenAddress` (voir
+ * TokenAddressesPanel), elles peuvent diverger silencieusement d'une valeur
+ * figée au build — même raison que `useMeridianNFTAddress`.
+ */
 export function useTokenAddresses() {
   const meridianAddress = useMeridianAddress();
   const { data, isLoading, refetch } = useReadContracts({

@@ -34,6 +34,7 @@ const depositProgressLabels = {
   full: "Montant total déposé",
 } as const;
 
+/** Ligne résumant un contrat dans "Mes contrats" : statut, montant, échéance, et badges d'action calculés depuis les miroirs de lib/domain/transaction. */
 export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
   const { address } = useAccount();
   const { tokenAddresses } = useTokenAddresses();

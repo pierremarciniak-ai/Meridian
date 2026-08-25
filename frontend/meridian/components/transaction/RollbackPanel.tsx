@@ -12,17 +12,17 @@ import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
-// rollbackDeposit est réservé à l'acheteur (onlyBuyer) et ne fait rien tant
-// que pendingWithdrawalAmount est déjà à 0 (voir canRollbackDeposit) : rien à
-// afficher côté fournisseur ou une fois les fonds déjà récupérés/retirés.
-//
-// refetchAttestation vient de TransactionDetail (une seule requête
-// useContainerPositionAttestation partagée avec la logique d'affichage,
-// plutôt qu'un second fetch indépendant ici) : au clic, on revérifie une
-// attestation fraîche et on l'envoie avec la transaction elle-même
-// (rollbackDepositWithPositionUpdate) si elle est disponible — sinon on
-// retombe sur le rollbackDeposit "nu", au cas où l'état déjà en storage
-// suffirait.
+/**
+ * Permet à l'acheteur de récupérer son dépôt (`rollbackDeposit`, réservé à
+ * l'acheteur et sans effet une fois `pendingWithdrawalAmount` à 0 — voir
+ * `canRollbackDeposit`). `refetchAttestation` vient de TransactionDetail
+ * (une seule requête `useContainerPositionAttestation` partagée avec la
+ * logique d'affichage, plutôt qu'un second fetch indépendant ici) : au clic,
+ * on revérifie une attestation fraîche et on l'envoie avec la transaction
+ * elle-même (`rollbackDepositWithPositionUpdate`) si elle est disponible —
+ * sinon on retombe sur `rollbackDeposit` "nu", au cas où l'état déjà en
+ * storage suffirait.
+ */
 export function RollbackPanel({
   transactionId,
   tx,

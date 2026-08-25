@@ -7,10 +7,12 @@ import { useContractAction } from "@/hooks/useContractAction";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
-// Pendant de AmountSetterRow pour les onlyOwner qui remplacent un taux en
-// points de base (ex. setFeesRateBps) plutôt qu'un montant de token. Saisi
-// et affiché en pourcentage (ex. "2.5" pour 250 bps) pour rester lisible ;
-// feesRateBps lui-même est un uint16 brut côté contrat (0-10000 = 0-100%).
+/**
+ * Formulaire générique pour les fonctions `onlyOwner` qui remplacent un
+ * taux en points de base (ex. `setFeesRateBps`). Saisi et affiché en
+ * pourcentage (ex. "2.5" pour 250 bps) pour rester lisible ; le taux
+ * lui-même est un `uint16` brut côté contrat (0-10000 = 0-100%).
+ */
 export function RateSetterRow({
   label,
   hint,

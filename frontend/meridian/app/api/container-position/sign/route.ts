@@ -9,18 +9,23 @@ import { fetchContainerPositionStatus } from "@/lib/vesselfinder";
 
 export const runtime = "nodejs";
 
-// Durée de validité de l'attestation : assez courte pour limiter la fenêtre
-// pendant laquelle une signature interceptée reste utilisable, assez longue
-// pour laisser le temps de confirmer la transaction wallet (approbation +
-// envoi) sans qu'elle expire entre-temps.
+/**
+ * Durée de validité de l'attestation : assez courte pour limiter la fenêtre
+ * pendant laquelle une signature interceptée reste utilisable, assez longue
+ * pour laisser le temps de confirmer la transaction wallet (approbation +
+ * envoi) sans qu'elle expire entre-temps.
+ */
 const SIGNATURE_TTL_SECONDS = 10 * 60;
 
-// La route (serveur, pas de wallet connecté) ne connaît pas d'elle-même le
-// réseau ciblé : le front le lui indique via chainId (celui du wallet
-// connecté, voir useMeridianAddress). Chaque réseau supporté a sa propre clé
-// d'oracle — l'adresse configurée on-chain via setContainerPositionOracleAddress
-// diffère d'un déploiement à l'autre (voir scripts/deploy-local.ts /
-// deploy-sepolia.ts), donc pas de clé unique possible ici.
+/**
+ * La route (serveur, pas de wallet connecté) ne connaît pas d'elle-même le
+ * réseau ciblé : le front le lui indique via `chainId` (celui du wallet
+ * connecté, voir `useMeridianAddress`). Chaque réseau supporté a sa propre
+ * clé d'oracle — l'adresse configurée on-chain via
+ * `setContainerPositionOracleAddress` diffère d'un déploiement à l'autre
+ * (voir scripts/deploy-local.ts / deploy-sepolia.ts), donc pas de clé unique
+ * possible ici.
+ */
 const NETWORK_CONFIG = {
   [hardhatLocal.id]: { chain: hardhatLocal, privateKeyEnvVar: "CONTAINER_ORACLE_PRIVATE_KEY_HARDHAT" },
   [sepolia.id]: { chain: sepolia, privateKeyEnvVar: "CONTAINER_ORACLE_PRIVATE_KEY_SEPOLIA" },
@@ -30,13 +35,16 @@ type SignResponse =
   | { available: true; status: ContainerPositionStatus; deadline: number; signature: `0x${string}` }
   | { available: false; reason: string };
 
-// Ne fait plus AUCUN appel on-chain (contrairement à l'ancien cron) : signe
-// juste hors-chaîne un triplet (transactionID, status, deadline) avec la clé
-// de l'oracle, gratuitement. C'est l'utilisateur qui consomme cette
-// signature via withdrawFundsWithPositionUpdate / rollbackDepositWithPositionUpdate
-// (voir Meridian.sol / applySignedContainerPosition), en payant lui-même le
-// gas de la mise à jour on-chain — le wallet oracle n'a donc jamais besoin
-// d'être alimenté en ETH, sur aucun des réseaux supportés.
+/**
+ * Signe hors-chaîne un triplet (transactionID, status, deadline) avec la clé
+ * de l'oracle, gratuitement — ne fait plus aucun appel on-chain
+ * (contrairement à l'ancien cron). C'est l'utilisateur qui consomme cette
+ * signature via `withdrawFundsWithPositionUpdate`/
+ * `rollbackDepositWithPositionUpdate` (voir Meridian.sol /
+ * `applySignedContainerPosition`), en payant lui-même le gas de la mise à
+ * jour on-chain : le wallet oracle n'a donc jamais besoin d'être alimenté en
+ * ETH, sur aucun des réseaux supportés.
+ */
 export async function POST(request: NextRequest) {
   let transactionId: string | undefined;
   let chainId: number | undefined;

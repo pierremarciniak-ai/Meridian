@@ -15,14 +15,17 @@ import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
-// Le statut on-chain (tx.containerPositionStatus) n'est plus tenu à jour par
-// un cron : on interroge en direct une attestation signée par l'oracle
-// (useContainerPositionAttestation, sans coût de gas) pour savoir si la
-// condition est réellement remplie *maintenant*. Au clic, on récupère une
-// attestation fraîche et on l'envoie avec la transaction elle-même
-// (withdrawFundsWithPositionUpdate) : la mise à jour on-chain et le retrait
-// se font en un seul appel, payé par le vendeur — le wallet oracle backend
-// ne dépense jamais de gas.
+/**
+ * Retrait des fonds disponibles par le fournisseur. Le statut on-chain
+ * (`tx.containerPositionStatus`) n'est plus tenu à jour par un cron : on
+ * interroge en direct une attestation signée par l'oracle
+ * (`useContainerPositionAttestation`, sans coût de gas) pour savoir si la
+ * condition est réellement remplie *maintenant*. Au clic, on récupère une
+ * attestation fraîche et on l'envoie avec la transaction elle-même
+ * (`withdrawFundsWithPositionUpdate`) : la mise à jour on-chain et le
+ * retrait se font en un seul appel, payé par le vendeur — le wallet oracle
+ * backend ne dépense jamais de gas.
+ */
 export function WithdrawPanel({ transactionId, tx, onWithdrawn }: { transactionId: `0x${string}`; tx: OnChainTransaction; onWithdrawn: () => void }) {
   const meridianAddress = useMeridianAddress();
   const { tokenAddresses } = useTokenAddresses();

@@ -1,5 +1,8 @@
-// Ordre strictement identique aux enums Solidity de InternalFunctions.sol —
-// la position numérique est ce qui est encodé on-chain (uint8).
+/**
+ * Enums miroirs de InternalFunctions.sol — ordre strictement identique aux
+ * enums Solidity, la position numérique étant ce qui est encodé on-chain
+ * (uint8).
+ */
 
 export enum WorkflowStatus {
   Unset = 0,

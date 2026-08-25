@@ -8,21 +8,25 @@ export type ContainerPositionAttestation =
   | { available: true; status: ContainerPositionStatus; deadline: number; signature: `0x${string}` }
   | { available: false; reason: string };
 
-// Interroge app/api/container-position/sign : une lecture VesselFinder +
-// une signature hors-chaîne côté serveur, aucun appel on-chain. Le résultat
-// sert à la fois à décider si l'action (retrait/rollback) est débloquée
-// côté UI, et — au clic — à fournir les paramètres exacts attendus par
-// withdrawFundsWithPositionUpdate / rollbackDepositWithPositionUpdate.
+/**
+ * Interroge `app/api/container-position/sign` : une lecture VesselFinder +
+ * une signature hors-chaîne côté serveur, aucun appel on-chain. Le résultat
+ * sert à la fois à décider si l'action (retrait/rollback) est débloquée côté
+ * UI, et — au clic — à fournir les paramètres exacts attendus par
+ * `withdrawFundsWithPositionUpdate`/`rollbackDepositWithPositionUpdate`.
+ */
 export function useContainerPositionAttestation(transactionId: `0x${string}` | undefined) {
   const chainId = useChainId();
   const [data, setData] = useState<ContainerPositionAttestation | undefined>();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  // Retourne directement le résultat frais (pas seulement via le state) :
-  // le clic sur "Retirer"/"Récupérer mes fonds" doit pouvoir l'utiliser
-  // immédiatement, sans dépendre d'un re-render pour lire `data` à jour —
-  // la précédente attestation peut dater de plusieurs minutes.
+  /**
+   * Retourne directement le résultat frais (pas seulement via le state) :
+   * le clic sur "Retirer"/"Récupérer mes fonds" doit pouvoir l'utiliser
+   * immédiatement, sans dépendre d'un re-render pour lire `data` à jour —
+   * la précédente attestation peut dater de plusieurs minutes.
+   */
   const refetch = useCallback(async (): Promise<ContainerPositionAttestation | undefined> => {
     if (!transactionId) return undefined;
     setIsLoading(true);

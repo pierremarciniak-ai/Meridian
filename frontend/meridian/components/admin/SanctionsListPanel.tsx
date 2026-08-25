@@ -14,9 +14,11 @@ import { sanctionsListAbi } from "@/lib/web3/abi/sanctionsList";
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 
-// Une ligne = son propre useContractAction, pour que le bouton "Lever la
-// sanction" d'une adresse ne montre pas de spinner sur toutes les autres
-// pendant qu'une transaction est en cours.
+/**
+ * Une ligne = son propre `useContractAction`, pour que le bouton "Lever la
+ * sanction" d'une adresse ne montre pas de spinner sur toutes les autres
+ * pendant qu'une transaction est en cours.
+ */
 function SanctionedAddressRow({
   account,
   oracleAddress,
@@ -52,12 +54,15 @@ function SanctionedAddressRow({
   );
 }
 
-// setSanctioned/unSetSanctioned/unSetAllSanctioned sont onlyOwner sur
-// SanctionsList lui-même (pas sur Meridian) : réservé au wallet qui a
-// déployé cet oracle mock, pas nécessairement le même que le owner de
-// Meridian dans un déploiement plus élaboré qu'en local. isSanctioned reste
-// public (lecture) : c'est Meridian qui l'appelle pour chaque vérification
-// de sanction, msg.sender y est alors l'adresse de Meridian.
+/**
+ * Gère la liste de sanctions de l'oracle mock. `setSanctioned`/
+ * `unSetSanctioned`/`unSetAllSanctioned` sont `onlyOwner` sur SanctionsList
+ * lui-même (pas sur Meridian) : réservé au wallet qui a déployé cet oracle
+ * mock, pas nécessairement le même que le owner de Meridian dans un
+ * déploiement plus élaboré qu'en local. `isSanctioned` reste public
+ * (lecture) : c'est Meridian qui l'appelle pour chaque vérification de
+ * sanction, `msg.sender` y est alors l'adresse de Meridian.
+ */
 export function SanctionsListPanel({
   mockSanctionsEnabled,
   mockSanctionsOracleAddress,

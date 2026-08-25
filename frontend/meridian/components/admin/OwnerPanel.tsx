@@ -14,6 +14,12 @@ import { useMeridianAddress } from "@/lib/web3/contracts";
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const RENOUNCE_CONFIRM_WORD = "RENONCER";
 
+/**
+ * Transfert et renoncement de propriété du contrat Meridian. Le transfert
+ * demande une confirmation navigateur ; le renoncement (irréversible, rend
+ * toutes les fonctions `onlyOwner` définitivement inappelables) exige en
+ * plus de taper un mot de confirmation exact pour activer le bouton.
+ */
 export function OwnerPanel({ owner, onUpdated }: { owner: `0x${string}` | undefined; onUpdated: () => void }) {
   const meridianAddress = useMeridianAddress();
   const [newOwner, setNewOwner] = useState("");

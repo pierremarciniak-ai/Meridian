@@ -9,22 +9,22 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
+/// @notice Interface minimale vers l'oracle de sanctions (réel ou mock).
 interface ISanctionsList {
+    /// @notice Indique si une adresse est actuellement sanctionnée.
     function isSanctioned(address addr) external view returns (bool);
 }
 
-// Forme ABI attendue de MeridianNFT.sol : pas d'import direct du contrat
-// (comme pour ISanctionsList ci-dessus), juste le shape nécessaire pour
-// l'appeler via l'adresse stockée dans meridianNFTAddress.
-//
-// Les enums sont passés en uint8 bruts (même ordre que Currency /
-// TransactionCondition / TransactionModel / AdvancePaymentMode ci-dessous)
-// plutôt qu'en string déjà formatées : la conversion en libellés lisibles
-// est faite côté MeridianNFT.sol, pas ici. Comme InternalFunctions est
-// hérité (donc inliné) par Meridian, tout code ajouté ici alourdit
-// directement le bytecode de Meridian — déjà proche de la limite EIP-170
-// (24 576 bytes) — alors que MeridianNFT est un contrat séparé avec son
-// propre budget.
+/// @notice Forme ABI attendue de MeridianNFT.sol.
+/// @dev Pas d'import direct du contrat (comme pour ISanctionsList) : juste le
+/// shape nécessaire pour l'appeler via meridianNFTAddress. Les enums sont
+/// passés en uint8 bruts (même ordre que Currency / TransactionCondition /
+/// TransactionModel / AdvancePaymentMode ci-dessous) ; la conversion en
+/// libellés lisibles se fait côté MeridianNFT.sol. Comme InternalFunctions
+/// est hérité (donc inliné) par Meridian, tout code ajouté ici alourdit
+/// directement son bytecode, déjà proche de la limite EIP-170 (24 576
+/// bytes), alors que MeridianNFT est un contrat séparé avec son propre
+/// budget.
 interface IMeridianNFT {
     struct TransactionData {
         bytes32 transactionID;
@@ -41,14 +41,13 @@ interface IMeridianNFT {
         string containerReference;
     }
 
-    //function mintTransactionPair(TransactionData calldata data) external returns (uint256 buyerTokenId, uint256 sellerTokenId);
     function mintOne(address _to, TransactionData calldata _data) external returns (uint256 tokenId);
 }
 
-// Contrat abstrait : porte tout ce qui est "interne" au fonctionnement
-// (types, storage, modifiers, events, et fonctions internal). Meridian.sol
-// en hérite et n'expose que l'API destinée au front-end. `abstract` car ce
-// contrat n'a pas vocation à être déployé seul (pas de fonctions externes).
+/// @title InternalFunctions
+/// @notice Types, storage, modifiers, events et logique interne de Meridian.
+/// @dev Contrat abstrait (pas de fonctions externes) : Meridian.sol en
+/// hérite et n'expose que l'API destinée au front-end.
 abstract contract InternalFunctions is Ownable {
     using SafeCast for uint256;
     using SafeERC20 for IERC20;
@@ -56,9 +55,11 @@ abstract contract InternalFunctions is Ownable {
     using ECDSA for bytes32;
 
     uint96 public internalID;
-    
-    uint16 public feesRateBps; // ex: 250 = 2,50 %, sur 10000
 
+    /// @notice Taux de frais de service, en points de base (250 = 2,50 %, sur 10000).
+    uint16 public feesRateBps;
+
+    /// @notice Cycle de vie d'une transaction.
     enum WorkflowStatus {
         UnSet,
         TransactionInitialized,
@@ -74,11 +75,13 @@ abstract contract InternalFunctions is Ownable {
         EURC
     }
 
+    /// @notice Condition qui déclenche l'éligibilité au retrait.
     enum TransactionCondition {
         AtTheBeginningOfDelivery,
         AtTheEndOfDelivery
     }
 
+    /// @notice Modèle de paiement, qui détermine le calendrier de dépôt.
     enum TransactionModel {
         FullLocked,
         PartialLocked,
@@ -86,6 +89,7 @@ abstract contract InternalFunctions is Ownable {
         Free
     }
 
+    /// @notice Moment où l'acompte devient retirable par le fournisseur.
     enum AdvancePaymentMode {
         Immediate,
         Deferred
@@ -96,6 +100,7 @@ abstract contract InternalFunctions is Ownable {
         Seller
     }
 
+    /// @notice Position déclarée du conteneur, attestée par l'oracle VesselFinder.
     enum ContainerPositionStatus {
         UnSet,
         InTransit,
@@ -107,6 +112,11 @@ abstract contract InternalFunctions is Ownable {
         address userAddress;
     }
 
+    /// @notice État complet d'une transaction d'escrow.
+    /// @dev netAmountDue = totalAmount - feesAmount/2 (le montant réellement
+    /// dû par l'acheteur, la moitié des frais restant à la charge du
+    /// fournisseur — voir transfertFeesFromBuyer). Vaut encore 0 tant que
+    /// feesPaid est false.
     struct Transaction {
         WorkflowStatus workflowStatus;
         Currency currency;
@@ -139,7 +149,7 @@ abstract contract InternalFunctions is Ownable {
         uint128 pendingWithdrawalAmount;
         uint128 refundAmount;
         uint128 feesAmount;
-        uint128 netAmountDue;  // = totalAmount - feesAmount/2   
+        uint128 netAmountDue;
 
         string billNumber;
         string containerReference;
@@ -168,17 +178,18 @@ abstract contract InternalFunctions is Ownable {
     address public sanctionsOracleAddress;
     address public mockSanctionsOracleAddress;
     address public meridianNFTAddress;
-    // Adresse dédiée (contrôlée par notre backend qui interroge l'API
-    // VesselFinder), distincte du owner : VesselFinder n'expose aucun oracle
-    // on-chain, donc c'est notre propre service qui atteste la donnée —
-    // soit directement via reportContainerPosition (son propre wallet),
-    // soit via une signature hors-chaîne consommée par n'importe qui via
-    // applySignedContainerPosition (voir withdrawFundsWithPositionUpdate /
-    // rollbackDepositWithPositionUpdate dans Meridian.sol, le chemin normal
-    // : ce wallet ne dépense alors jamais de gas). Ne jamais alimenter
-    // containerPositionStatus depuis un paramètre fourni par le vendeur
-    // (withdrawFunds) : il a intérêt à mentir pour débloquer les fonds plus
-    // tôt.
+
+    /// @notice Adresse de l'oracle de position de conteneur (backend VesselFinder).
+    /// @dev Distincte du owner : VesselFinder n'expose aucun oracle on-chain,
+    /// donc c'est notre propre service qui atteste la donnée — soit
+    /// directement via reportContainerPosition (son propre wallet), soit via
+    /// une signature hors-chaîne consommée par n'importe qui via
+    /// applySignedContainerPosition (voir withdrawFundsWithPositionUpdate /
+    /// rollbackDepositWithPositionUpdate dans Meridian.sol, le chemin normal
+    /// : ce wallet ne dépense alors jamais de gas). Ne jamais alimenter
+    /// containerPositionStatus depuis un paramètre fourni par le vendeur
+    /// (withdrawFunds) : il a intérêt à mentir pour débloquer les fonds plus
+    /// tôt.
     address public containerPositionOracleAddress;
     address public feesWalletAddress;
 
@@ -213,6 +224,9 @@ abstract contract InternalFunctions is Ownable {
         _;
     }
 
+    /// @dev Plus permissif que onlySignedTransaction : utilisé uniquement
+    /// pour le mint du reçu NFT, qui doit rester possible après la clôture
+    /// du dossier (TransactionCompleted).
     modifier onlySignedOrCompletedTransaction(bytes32 _transactionID) {
         WorkflowStatus _status = TransactionsList[_transactionID].workflowStatus;
         require(
@@ -267,7 +281,7 @@ abstract contract InternalFunctions is Ownable {
     event BuyerIsNowEditor(bytes32 indexed transactionID);
     event SellerIsNowEditor(bytes32 indexed transactionID);
     event FeesRateBpsUpdated(uint16 newFeesRateBps);
-    event FeesPaid(bytes32 indexed transactionID, address indexed buyer, address feesWallet, uint amount, Currency currency);    
+    event FeesPaid(bytes32 indexed transactionID, address indexed buyer, address feesWallet, uint amount, Currency currency);
     event FeesWalletAddressUpdated(address indexed newFeesWallet);
 
     error AddressIsSanctioned(address accountAddress);
@@ -279,6 +293,9 @@ abstract contract InternalFunctions is Ownable {
         });
     }
 
+    /// @notice Calcule l'acompte réellement dû à partir du montant saisi.
+    /// @dev PartialLocked applique 30 %, PartialImmediate 15 %, FullLocked
+    /// n'a pas d'acompte (0) ; Free reprend _partialAmount tel quel.
     function calculateAdvanceAmount(TransactionModel _transactionModel, uint _partialAmount) internal pure returns (uint) {
         if (_transactionModel == TransactionModel.PartialLocked) {
             return (_partialAmount * 30) / 100;
@@ -290,6 +307,11 @@ abstract contract InternalFunctions is Ownable {
         return _partialAmount;
     }
 
+    /// @notice Dérive le mode de paiement effectif à partir du modèle de transaction.
+    /// @dev FullLocked/PartialLocked imposent Deferred, PartialImmediate
+    /// impose Immediate ; seul Free respecte _requestedMode. Le retour
+    /// inconditionnel en fin de fonction (plutôt qu'un 3e "else if") permet
+    /// au compilateur de prouver que tous les chemins retournent une valeur.
     function calculateAdvancePaymentMode(TransactionModel _transactionModel, AdvancePaymentMode _requestedMode) internal pure
     returns (AdvancePaymentMode) {
         if (_transactionModel == TransactionModel.FullLocked || _transactionModel == TransactionModel.PartialLocked) {
@@ -297,12 +319,10 @@ abstract contract InternalFunctions is Ownable {
         } else if (_transactionModel == TransactionModel.PartialImmediate) {
             return AdvancePaymentMode.Immediate;
         }
-        // Seul cas restant : TransactionModel.Free. Un retour inconditionnel
-        // ici (plutôt qu'un 3e "else if") permet au compilateur de prouver
-        // que la fonction retourne toujours une valeur sur tous les chemins.
         return _requestedMode;
     }
 
+    /// @notice Applique les champs modifiables d'une transaction (devise, conditions, montants...).
     function saveCommonTransactionDetails(bytes32 _transactionID, TransactionDetailsInput calldata _details) internal {
         require(_details.transactionCancellingDate >= block.timestamp, "Transaction cancelling date must be in the future");
         require(_details.totalAmount > 0, "Total amount must be greater than zero");
@@ -330,12 +350,18 @@ abstract contract InternalFunctions is Ownable {
         }
     }
 
+    /// @notice Invalide les deux signatures (appelé à chaque modification des détails).
     function resetSignatures(bytes32 _transactionID) internal {
         Transaction storage _transaction = TransactionsList[_transactionID];
         _transaction.signedByBuyer = false;
         _transaction.signedBySeller = false;
     }
 
+    /// @notice Calcule le montant du prochain versement attendu de l'acheteur.
+    /// @dev FullLocked, et Free sans acompte, exigent netAmountDue en un
+    /// seul appel. Sinon : l'acompte tant qu'aucun dépôt n'a eu lieu, puis le
+    /// solde restant (netAmountDue - depositedAmount) ; 0 une fois le dépôt
+    /// complet.
     function calculateDepositAmount(Transaction storage _transaction) internal view returns (uint128) {
         if (_transaction.transactionModel == TransactionModel.FullLocked) {
             return _transaction.netAmountDue;
@@ -350,6 +376,11 @@ abstract contract InternalFunctions is Ownable {
         }
     }
 
+    /// @notice Enregistre la signature d'une partie et fait avancer le tour d'édition.
+    /// @dev currentEditor alterne à chaque signature ; la double signature
+    /// (les deux camps signés simultanément) déclenche checkSignatures. Une
+    /// sanction détectée à cet instant abandonne la transaction au lieu
+    /// d'enregistrer la signature.
     function signTransaction(bytes32 _transactionID, UserType _userType) internal {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
@@ -369,19 +400,20 @@ abstract contract InternalFunctions is Ownable {
                 _transaction.signedBySeller = true;
                 _transaction.currentEditor = UserType.Buyer;
 
-                emit BuyerIsNowEditor(_transactionID);                
+                emit BuyerIsNowEditor(_transactionID);
             } else {
                 _transaction.signedByBuyer = true;
                 _transaction.currentEditor = UserType.Seller;
 
-                emit SellerIsNowEditor(_transactionID);                  
+                emit SellerIsNowEditor(_transactionID);
             }
 
             emit TransactionPartiallySigned(_transactionID, _userType, msg.sender);
             checkSignatures(_transactionID);
         }
-    }    
+    }
 
+    /// @notice Finalise la transaction dès que les deux parties ont signé.
     function checkSignatures(bytes32 _transactionID) internal {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
@@ -394,65 +426,62 @@ abstract contract InternalFunctions is Ownable {
         }
     }
 
-function transfertFeesFromBuyer(bytes32 _transactionID) internal {
-    Transaction storage _transaction = TransactionsList[_transactionID];
+    /// @notice Calcule et prélève les frais de service auprès de l'acheteur.
+    /// @dev Frais = totalAmount * feesRateBps / 10000, avec un plancher de
+    /// 30 stablecoins dès que feesRateBps > 0, lui-même plafonné à
+    /// totalAmount (évite un netAmountDue négatif — donc un revert par
+    /// underflow — sur une très petite transaction). La moitié des frais
+    /// (à la charge du fournisseur) est déduite de l'acompte plutôt que du
+    /// solde restant ; si l'acompte est trop petit pour l'absorber
+    /// entièrement, il tombe à 0 et le manque retombe sur le solde restant
+    /// via netAmountDue (voir calculateDepositAmount). L'acompte est ensuite
+    /// replafonné à netAmountDue, garde-fou pour le modèle Free où il est
+    /// saisi manuellement et peut dépasser totalAmount.
+    function transfertFeesFromBuyer(bytes32 _transactionID) internal {
+        Transaction storage _transaction = TransactionsList[_transactionID];
 
-    uint128 _feesAmount = uint128(uint256(_transaction.totalAmount) * feesRateBps / 10000);
+        uint128 _feesAmount = uint128(uint256(_transaction.totalAmount) * feesRateBps / 10000);
 
-    //frais minimum de 30 stablecoin
-    if (feesRateBps > 0 && _feesAmount < 30_000_000) _feesAmount = 30_000_000;
+        if (feesRateBps > 0 && _feesAmount < 30_000_000) _feesAmount = 30_000_000;
 
-    // évite que le plancher dépasse totalAmount sur une très petite
-    // transaction, ce qui ferait revert netAmountDue (totalAmount - fees/2)
-    // par underflow
-    if (_feesAmount > _transaction.totalAmount) _feesAmount = _transaction.totalAmount;
+        if (_feesAmount > _transaction.totalAmount) _feesAmount = _transaction.totalAmount;
 
-    _transaction.feesAmount = _feesAmount;
-    _transaction.netAmountDue = _transaction.totalAmount - (_feesAmount / 2);
+        _transaction.feesAmount = _feesAmount;
+        _transaction.netAmountDue = _transaction.totalAmount - (_feesAmount / 2);
 
-    // La part de frais du fournisseur (feesAmount/2) est déduite de l'acompte
-    // (1er dépôt) plutôt que du solde restant : le solde restant vaut alors
-    // totalAmount - advanceAmount (valeur d'origine), inchangé par les frais.
-    // Si l'acompte est trop petit pour absorber toute la part, il tombe à 0
-    // et le manque retombe sur le solde restant via netAmountDue (voir
-    // calculateDepositAmount).
-    uint128 _sellerFeesShare = _feesAmount / 2;
-    if (_transaction.advanceAmount > _sellerFeesShare) {
-        _transaction.advanceAmount -= _sellerFeesShare;
-    } else {
-        _transaction.advanceAmount = 0;
+        uint128 _sellerFeesShare = _feesAmount / 2;
+        if (_transaction.advanceAmount > _sellerFeesShare) {
+            _transaction.advanceAmount -= _sellerFeesShare;
+        } else {
+            _transaction.advanceAmount = 0;
+        }
+
+        if (_transaction.advanceAmount > _transaction.netAmountDue) {
+            _transaction.advanceAmount = _transaction.netAmountDue;
+        }
+
+        if (_feesAmount > 0) {
+            require(feesWalletAddress != address(0), "Fees wallet address not configured");
+            IERC20 _token = tokenAddresses[_transaction.currency];
+            require(address(_token) != address(0), "Token address not configured for this currency");
+
+            _transaction.feesPaid = true;
+            _token.safeTransferFrom(_transaction.buyer.userAddress, feesWalletAddress, _feesAmount);
+
+            emit FeesPaid(_transactionID, _transaction.buyer.userAddress, feesWalletAddress, _feesAmount, _transaction.currency);
+        }
     }
 
-    // plafonne advanceAmount à netAmountDue : garde-fou pour le modèle Free,
-    // où l'acompte est saisi manuellement et peut dépasser totalAmount.
-    if (_transaction.advanceAmount > _transaction.netAmountDue) {
-        _transaction.advanceAmount = _transaction.netAmountDue;
-    }
-
-    if (_feesAmount > 0) {
-        require(feesWalletAddress != address(0), "Fees wallet address not configured");
-        IERC20 _token = tokenAddresses[_transaction.currency];
-        require(address(_token) != address(0), "Token address not configured for this currency");
-
-        _transaction.feesPaid = true;
-        _token.safeTransferFrom(_transaction.buyer.userAddress, feesWalletAddress, _feesAmount);
-
-        emit FeesPaid(_transactionID, _transaction.buyer.userAddress, feesWalletAddress, _feesAmount, _transaction.currency);
-    }
-}    
-
-    // Construit les données et mint un NFT "reçu de transaction" pour
-    // l'acheteur et un pour le vendeur. Appelé par
-    // Meridian.mintTransactionNFTs (fonction externe séparée, appelée par le
-    // front-end après la double signature) plutôt qu'automatiquement depuis
-    // checkSignatures : garder ce code hors du chemin critique de signature
-    // réduit le bytecode de Meridian, déjà proche de la limite EIP-170.
+    /// @notice Construit les données et mint le NFT "reçu de transaction" pour une adresse.
+    /// @dev Appelé par les fonctions externes séparées mintTransactionNFTBuyer
+    /// /Seller plutôt qu'automatiquement depuis checkSignatures : garder ce
+    /// code hors du chemin critique de signature réduit le bytecode de
+    /// Meridian, déjà proche de la limite EIP-170. Les champs sont assignés
+    /// un par un (pas un struct literal nommé) car un literal à 12 champs
+    /// fait "stack too deep" à la compilation (codegen legacy, sans viaIR).
     function mintTransactionNFT(bytes32 _transactionID, address _to) internal returns (uint256 _tokenId) {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
-        // Champs assignés un par un plutôt qu'un seul struct literal nommé :
-        // avec 12 champs, le literal fait "stack too deep" à la compilation
-        // (codegen legacy, sans viaIR).
         IMeridianNFT.TransactionData memory _data;
 
         _data.transactionID = _transactionID;
@@ -469,8 +498,14 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
         _data.containerReference = _transaction.containerReference;
 
         _tokenId = IMeridianNFT(meridianNFTAddress).mintOne(_to, _data);
-    }  
+    }
 
+    /// @notice Vérifie qu'un retrait est actuellement autorisé, ou revert sinon.
+    /// @dev En AdvancePaymentMode.Immediate, le tout premier retrait
+    /// (partialWithdrawalCompleted encore false) ignore la position du
+    /// conteneur ; tous les retraits suivants, comme en mode Deferred,
+    /// exigent la position attendue par transactionCondition.
+    /// @return _status true si l'appel n'a pas revert (toujours true en pratique).
     function withdrawalEligibilityStatus(bytes32 _transactionID) internal view returns (bool _status) {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
@@ -488,6 +523,13 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
         return true;
     }
 
+    /// @notice Indique si l'acheteur peut actuellement récupérer son dépôt.
+    /// @dev Toujours éligible si la transaction est déjà Aborted. Sinon,
+    /// seulement après l'échéance (transactionCancellingDate), et seulement
+    /// si la condition de livraison convenue n'est pas déjà remplie — auquel
+    /// cas le fournisseur a rempli sa part et seul le retrait normal reste
+    /// possible.
+    /// @return _status true si le rollback est actuellement autorisé.
     function rollbackEligibilityStatus(bytes32 _transactionID) internal view returns (bool _status) {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
@@ -501,29 +543,26 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
             _transaction.containerPositionStatus == ContainerPositionStatus.UnSet) ||
             (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery &&
             _transaction.containerPositionStatus != ContainerPositionStatus.AtDestination)) {
-                
+
                 return true;
             }
         }
         return false;
     }
 
-    // Vérifie une attestation hors-chaîne signée par containerPositionOracleAddress
-    // (voir app/api/container-position/sign côté front/backend) et met à jour
-    // containerPositionStatus si elle est valide, avant que
-    // withdrawFundsCore/rollbackDepositCore ne s'exécutent avec la valeur
-    // fraîche. Objectif : l'oracle ne signe qu'un message (gratuit, hors
-    // chaîne) au lieu d'envoyer lui-même reportContainerPosition — c'est
-    // l'utilisateur (acheteur/vendeur), via withdrawFundsWithPositionUpdate /
-    // rollbackDepositWithPositionUpdate, qui paie le gas de la mise à jour.
-    // _deadline borne la durée de validité de la signature (anti-rejeu d'une
-    // vieille attestation), address(this) lie la signature à ce contrat
-    // précis (anti-rejeu inter-contrats) et block.chainid à ce réseau précis
-    // (anti-rejeu inter-réseaux) : sans ce dernier, transactionID seul ne
-    // suffit pas à distinguer deux réseaux — il vaut keccak256(internalID,
-    // buyer), et internalID redémarre à 0 sur chaque déploiement, donc deux
-    // dossiers sans rapport sur deux chaînes différentes peuvent partager le
-    // même transactionID.
+    /// @notice Vérifie une attestation de position signée hors-chaîne et met à jour le statut.
+    /// @dev L'oracle (voir app/api/container-position/sign côté front) ne
+    /// signe qu'un message hors-chaîne, sans jamais payer de gas ; c'est
+    /// l'utilisateur (acheteur ou vendeur), via withdrawFundsWithPositionUpdate
+    /// / rollbackDepositWithPositionUpdate, qui soumet la signature et paie
+    /// la mise à jour. _deadline borne la durée de validité de la signature
+    /// (anti-rejeu d'une vieille attestation), address(this) la lie à ce
+    /// contrat précis (anti-rejeu inter-contrats) et block.chainid à ce
+    /// réseau précis (anti-rejeu inter-réseaux) : transactionID seul ne
+    /// suffit pas à distinguer deux réseaux, car il vaut
+    /// keccak256(internalID, buyer) et internalID redémarre à 0 à chaque
+    /// déploiement — deux dossiers sans rapport sur deux chaînes différentes
+    /// peuvent donc partager le même transactionID.
     function applySignedContainerPosition(bytes32 _transactionID, ContainerPositionStatus _status, uint256 _deadline,
     bytes calldata _signature) internal {
         require(block.timestamp <= _deadline, "Container position signature expired");
@@ -538,6 +577,7 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
         emit ContainerPositionReported(_transactionID, _status);
     }
 
+    /// @notice Retire les fonds disponibles vers le fournisseur et clôture le dossier si tout est soldé.
     function withdrawFundsCore(bytes32 _transactionID) internal {
         withdrawalEligibilityStatus(_transactionID);
 
@@ -573,6 +613,7 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
         }
     }
 
+    /// @notice Rembourse l'acheteur du montant encore en attente de retrait.
     function rollbackDepositCore(bytes32 _transactionID) internal {
         require(rollbackEligibilityStatus(_transactionID), "Transaction is not eligible for rollback");
 
@@ -598,6 +639,11 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
         }
     }
 
+    /// @notice Interroge l'oracle de sanctions (réel ou mock) pour une adresse.
+    /// @dev Fail-open intentionnel : si l'appel à l'oracle échoue (panne,
+    /// pause...), l'adresse est considérée non sanctionnée plutôt que de
+    /// bloquer toute la transaction — seul un SanctionsOracleCallFailed est
+    /// émis pour tracer l'incident.
     function checkSanction(address _userAddress) internal returns (bool) {
 
         address _oracleAddress = mockSanctionsEnabled ? mockSanctionsOracleAddress : sanctionsOracleAddress;

@@ -16,10 +16,12 @@ import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
 import { useMeridianAddress } from "@/lib/web3/contracts";
 
-// Les attributs "date" et "montant" du JSON on-chain sont bruts (timestamp
-// Unix, montant sans division par les decimals — voir buildTokenURI dans
-// MeridianNFT.sol) : on les reformate ici pour l'affichage, comme partout
-// ailleurs dans l'app (formatUnixDate/formatAmount).
+/**
+ * Les attributs "date" et "montant" du JSON on-chain sont bruts (timestamp
+ * Unix, montant sans division par les decimals — voir `buildTokenURI` dans
+ * MeridianNFT.sol) : on les reformate ici pour l'affichage, comme partout
+ * ailleurs dans l'app (`formatUnixDate`/`formatAmount`).
+ */
 const DATE_TRAITS = new Set(["Expiration Date"]);
 const AMOUNT_TRAITS = new Set(["Advance Amount", "Total Amount"]);
 
@@ -38,9 +40,12 @@ function AttrRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Visible une fois la transaction signée (les deux parties sont fixées) et
-// jusqu'à la fin du cycle : chaque partie mint son propre NFT récapitulatif,
-// indépendamment du dépôt/retrait des fonds.
+/**
+ * Mint et affiche le reçu NFT récapitulatif d'une transaction. Visible une
+ * fois la transaction signée (les deux parties sont fixées) et jusqu'à la
+ * fin du cycle : chaque partie mint son propre NFT, indépendamment du
+ * dépôt/retrait des fonds.
+ */
 export function NftMintPanel({
   transactionId,
   tx,

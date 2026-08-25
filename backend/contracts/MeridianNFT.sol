@@ -7,19 +7,23 @@ import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
 
-// Mint un NFT à l'acheteur et un au vendeur pour chaque transaction Meridian
-// signée, avec les détails de la transaction encodés en JSON on-chain
-// (data URI base64, pas d'image pour l'instant). Le owner de ce contrat doit
-// être l'adresse du contrat Meridian : c'est lui qui appelle
-// mintTransactionPair une fois les deux signatures réunies.
+/// @title MeridianNFT
+/// @notice Reçu NFT d'une transaction Meridian, un exemplaire par partie (acheteur/vendeur).
+/// @dev Metadata encodée en JSON on-chain (data URI base64, pas d'image pour
+/// l'instant). Le owner de ce contrat doit être l'adresse du contrat
+/// Meridian : c'est lui qui appelle mintOne une fois les deux signatures
+/// réunies.
 contract MeridianNFT is ERC721URIStorage, Ownable {
     uint256 private _nextTokenId;
 
-    // currency / transactionCondition / transactionModel / advancePaymentMode
-    // sont les codes uint8 des enums Meridian (même ordre : voir les
-    // fonctions *Label ci-dessous). Convertis en libellés lisibles ici,
-    // plutôt que dans Meridian.sol, pour ne pas alourdir son bytecode
-    // (proche de la limite EIP-170).
+    /// @notice Détails de transaction figés au moment du mint.
+    /// @dev currency / transactionCondition / transactionModel /
+    /// advancePaymentMode sont les codes uint8 des enums Meridian (même
+    /// ordre : voir les fonctions *Label ci-dessous), convertis en libellés
+    /// lisibles ici plutôt que dans Meridian.sol pour ne pas alourdir son
+    /// bytecode (proche de la limite EIP-170). Les largeurs (uint128/uint40)
+    /// doivent rester identiques à IMeridianNFT.TransactionData côté
+    /// InternalFunctions.sol : c'est le même shape ABI pour l'appel externe.
     struct TransactionData {
         bytes32 transactionID;
         string billNumber;
@@ -29,11 +33,6 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
         uint8 transactionCondition;
         uint8 transactionModel;
         uint8 advancePaymentMode;
-        // Mêmes largeurs que IMeridianNFT.TransactionData côté
-        // InternalFunctions.sol (obligatoire : c'est le même shape ABI pour
-        // l'appel externe mintTransactionPair). uint128 pour les montants,
-        // uint40 pour les timestamps — voir le commentaire sur le struct
-        // Transaction dans InternalFunctions.sol pour la justification.
         uint128 advanceAmount;
         uint128 totalAmount;
         uint40 transactionCancellingDate;
@@ -45,11 +44,9 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
         Seller
     }
 
-    // internal (pas public) : avec 12 champs dont 2 string, le getter
-    // auto-généré par `public` fait "stack too deep" à la compilation
-    // (codegen legacy, sans viaIR). getTransactionData ci-dessous retourne
-    // le struct entier en un bloc memory, ce qui évite le problème (même
-    // pattern que Meridian.getTransaction).
+    /// @dev internal (pas public) : avec 12 champs dont 2 string, le getter
+    /// auto-généré par `public` fait "stack too deep" à la compilation
+    /// (codegen legacy, sans viaIR) — voir getTransactionData ci-dessous.
     mapping(uint256 => TransactionData) internal _transactionData;
 
     constructor(address initialOwner)
@@ -57,10 +54,12 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
         Ownable(initialOwner)
     {}
 
+    /// @notice Retourne les détails de transaction associés à un tokenId.
     function getTransactionData(uint256 tokenId) external view returns (TransactionData memory) {
         return _transactionData[tokenId];
     }
 
+    /// @notice Mint un reçu pour une adresse (appelé par Meridian, une fois par partie).
     function mintOne(address _to, TransactionData calldata _data) external onlyOwner returns (uint256 tokenId) {
         tokenId = _nextTokenId++;
         _transactionData[tokenId] = _data;
@@ -70,16 +69,15 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
         _setTokenURI(tokenId, _uri);
     }
 
-    // Construit le JSON de metadata encodé en base64 (data URI), en
-    // accumulant deux arguments à la fois (json + un nouveau morceau)
-    // plutôt qu'en un seul abi.encodePacked à N arguments : avec autant de
-    // champs et d'appels imbriqués (Strings.*, _attribute), un seul gros
-    // appel fait aussi "stack too deep" à la compilation.
-    //
-    // Note : billNumber et containerReference viennent de saisies
-    // utilisateur côté Meridian et ne sont pas échappés ici. Un `"` dans ces
-    // champs casserait le JSON généré. Impact limité à l'affichage du NFT
-    // (aucun fonds en jeu), donc accepté tel quel pour l'instant.
+    /// @notice Construit la data URI JSON (base64) de metadata pour une transaction.
+    /// @dev Accumule deux arguments à la fois (json + un nouveau morceau)
+    /// plutôt qu'un seul abi.encodePacked à N arguments : avec autant de
+    /// champs et d'appels imbriqués (Strings.*, _attribute), un seul gros
+    /// appel fait aussi "stack too deep" à la compilation. billNumber et
+    /// containerReference viennent de saisies utilisateur côté Meridian et
+    /// ne sont pas échappés ici : un `"` dans ces champs casserait le JSON
+    /// généré. Impact limité à l'affichage du NFT (aucun fonds en jeu), donc
+    /// accepté tel quel pour l'instant.
     function buildTokenURI(TransactionData calldata _data) public pure returns (string memory) {
         bytes memory json = abi.encodePacked(
             '{"name":"Meridian Transaction ', _data.billNumber, '",',
@@ -112,28 +110,28 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
         return _attributeBody(_traitType, _value, _quoted);
     }
 
-    // _quoted distingue les valeurs texte ("value":"...") des valeurs
-    // numériques déjà stringifiées ("value":123, sans guillemets), pour que
-    // les marketplaces qui lisent ces attributs comme des nombres le puissent.
+    /// @dev _quoted distingue les valeurs texte ("value":"...") des valeurs
+    /// numériques déjà stringifiées ("value":123, sans guillemets), pour que
+    /// les marketplaces qui lisent ces attributs comme des nombres le puissent.
     function _attributeBody(string memory _traitType, string memory _value, bool _quoted) private pure returns (bytes memory) {
         return _quoted
             ? abi.encodePacked('{"trait_type":"', _traitType, '","value":"', _value, '"}')
             : abi.encodePacked('{"trait_type":"', _traitType, '","value":', _value, "}");
     }
 
-    // Ordre attendu : Currency { USDC, USDT, EURC } dans InternalFunctions.sol.
+    /// @dev Ordre attendu : Currency { USDC, USDT, EURC } dans InternalFunctions.sol.
     function _currencyLabel(uint8 _currency) private pure returns (string memory) {
         if (_currency == 0) return "USDC";
         if (_currency == 1) return "USDT";
         return "EURC";
     }
 
-    // Ordre attendu : TransactionCondition { AtTheBeginningOfDelivery, AtTheEndOfDelivery }.
+    /// @dev Ordre attendu : TransactionCondition { AtTheBeginningOfDelivery, AtTheEndOfDelivery }.
     function _transactionConditionLabel(uint8 _condition) private pure returns (string memory) {
         return _condition == 0 ? "AtTheBeginningOfDelivery" : "AtTheEndOfDelivery";
     }
 
-    // Ordre attendu : TransactionModel { FullLocked, PartialLocked, PartialImmediate, Free }.
+    /// @dev Ordre attendu : TransactionModel { FullLocked, PartialLocked, PartialImmediate, Free }.
     function _transactionModelLabel(uint8 _model) private pure returns (string memory) {
         if (_model == 0) return "FullLocked";
         if (_model == 1) return "PartialLocked";
@@ -141,7 +139,7 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
         return "Free";
     }
 
-    // Ordre attendu : AdvancePaymentMode { Immediate, Deferred }.
+    /// @dev Ordre attendu : AdvancePaymentMode { Immediate, Deferred }.
     function _advancePaymentModeLabel(uint8 _mode) private pure returns (string memory) {
         return _mode == 0 ? "Immediate" : "Deferred";
     }

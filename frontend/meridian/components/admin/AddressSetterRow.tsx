@@ -11,10 +11,12 @@ import { useMeridianAddress } from "@/lib/web3/contracts";
 
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 
-// Un onlyOwner sur deux dans Meridian.sol se résume à "remplacer une adresse
-// stockée" (oracle sanctions, oracle position conteneur, contrat NFT, token
-// par devise...) : un seul composant paramétrable évite de dupliquer sept
-// fois le même formulaire à un champ.
+/**
+ * Formulaire générique pour les fonctions `onlyOwner` qui remplacent une
+ * adresse stockée (oracle sanctions, oracle position conteneur, contrat
+ * NFT, token par devise...) — un seul composant paramétrable évite de
+ * dupliquer sept fois le même formulaire à un champ.
+ */
 export function AddressSetterRow({
   label,
   hint,
