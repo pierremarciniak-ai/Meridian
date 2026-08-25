@@ -39,7 +39,7 @@ async function main() {
   await meridian.setTokenAddress(CURRENCY.EURC, await eurc.getAddress());
 
   // --- 4. Distribution de tokens de test ---
-  const amount = ethers.parseUnits("10000", 6);
+  const amount = ethers.parseUnits("100000", 6);
 
   await usdc.mint(buyer.address, amount);
   await usdt.mint(buyer.address, amount);
@@ -74,7 +74,7 @@ async function main() {
 
   // --- 8. Configuration du wallet de frais (backend) ---
   await meridian.setFeesWalletAddress(feesWallet.address);
-  await meridian.setFeesRateBps(1000); // ex: 250 = 2,50 %, sur 10000
+  await meridian.setFeesRateBps(15); // ex: 250 = 2,50 %, sur 10000
   console.log("FeesRateBps set: ", await meridian.feesRateBps());
 
   console.log("\n--- Pour l'attestation de position (frontend/meridian/.env.local) ---");

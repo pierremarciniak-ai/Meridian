@@ -174,7 +174,7 @@ export function useContractAction() {
       // son wallet, un état modifié entre-temps par une autre transaction…).
       // Sans cette vérification, ce cas se traduisait par un stage "success"
       // silencieux : aucun event émis à trouver, donc aucune mise à jour de
-      // l'UI ni du dossier, sans le moindre message d'erreur.
+      // l'UI ni du contrat, sans le moindre message d'erreur.
       if (receipt.data?.status === "reverted") {
         setStage("error");
         if (publicClient && hash) {

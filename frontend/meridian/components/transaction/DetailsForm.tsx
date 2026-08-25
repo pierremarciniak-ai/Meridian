@@ -2,6 +2,7 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import { TxStatusLine } from "@/components/TxStatusLine";
+import { FeesExplainerNote } from "@/components/transaction/FeesExplainerNote";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
@@ -89,7 +90,7 @@ export function DetailsForm({
   // Recalculé à chaque frappe : même raison que dans CreateShipmentForm, une
   // pure estimation en temps réel (le montant qui fait foi n'est calculé
   // qu'à la double signature, voir TransactionSummary).
-  const { feesAmount: feesEstimate, netAmountDue: netAmountDueEstimate } = estimateFees(totalAmountParsed, feesRateBps);
+  const { feesAmount: feesEstimate } = estimateFees(totalAmountParsed, feesRateBps);
   const myTurn = isCurrentEditor(tx, role);
   const containerReferenceValid = CONTAINER_REFERENCE_PATTERN.test(containerReference);
 
@@ -143,7 +144,7 @@ export function DetailsForm({
             label="Référence conteneur *"
             error={
               !containerReference
-                ? "Obligatoire pour la signature du dossier"
+                ? "Obligatoire pour la signature du contrat"
                 : !containerReferenceValid
                   ? "Format invalide : 4 lettres suivies de 7 chiffres, collés (ex. MEDU1234567)"
                   : undefined
@@ -199,13 +200,7 @@ export function DetailsForm({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field
             label={`Montant total (${symbol || "…"})`}
-            hint={
-              !tx.feesPaid && feesEstimate > 0n
-                ? role === "buyer"
-                  ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de service, à payer en plus lorsque le dossier sera signé par les deux parties.`
-                  : `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de service prélevés à l'acheteur à la double signature ; vous percevrez ~${formatAmount(netAmountDueEstimate, decimals)} ${symbol} au total (frais du fournisseur déjà déduits).`
-                : undefined
-            }
+            hint={!tx.feesPaid && feesEstimate > 0n ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de service*` : undefined}
           >
             <input className="field-input" inputMode="decimal" value={totalAmountInput} onChange={(e) => setTotalAmountInput(e.target.value)} required />
           </Field>
@@ -232,6 +227,8 @@ export function DetailsForm({
             />
           </Field>
         </div>
+
+        {!tx.feesPaid && feesEstimate > 0n && <FeesExplainerNote />}
 
         <p className="text-xs text-subtle">Toute modification enregistrée réinitialise les deux signatures : acheteur et fournisseur devront re-signer.</p>
 

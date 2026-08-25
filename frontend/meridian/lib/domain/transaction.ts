@@ -39,7 +39,9 @@ export type OnChainTransaction = {
   // n'est qu'une estimation (voir estimateFees ci-dessous).
   feesPaid: boolean;
   // Frais réellement prélevés (== totalAmount * feesRateBps / 10000 au
-  // moment de la signature). 0 tant que feesPaid vaut false.
+  // moment de la signature, avec un plancher de 30 tokens dès que
+  // feesRateBps > 0, lui-même plafonné à totalAmount — voir MIN_FEES_AMOUNT
+  // ci-dessous). 0 tant que feesPaid vaut false.
   feesAmount: bigint;
   // Montant net que l'acheteur doit effectivement déposer (totalAmount -
   // feesAmount/2, la part du fournisseur étant absorbée par cette réduction
@@ -120,8 +122,9 @@ export function estimateAdvancePaymentMode(model: TransactionModel, requested: A
 
 // Miroir client de calculateDepositAmount — sert à afficher le montant du
 // prochain dépôt attendu avant de déclencher l'approbation ERC20 + l'appel.
-// N'a de sens qu'une fois la transaction Signed (netAmountDue déjà calculé
-// et advanceAmount déjà plafonné par transfertFeesFromBuyer, voir
+// N'a de sens qu'une fois la transaction Signed (netAmountDue déjà calculé et
+// advanceAmount déjà réduit de la part de frais du fournisseur, puis
+// plafonné à netAmountDue, par transfertFeesFromBuyer — voir
 // InternalFunctions.sol) — appelant garanti par tx.workflowStatus côté UI.
 export function estimateDepositAmount(tx: OnChainTransaction): bigint {
   if (tx.transactionModel === TransactionModel.FullLocked) return tx.netAmountDue;
@@ -131,6 +134,11 @@ export function estimateDepositAmount(tx: OnChainTransaction): bigint {
   return 0n;
 }
 
+// Plancher de frais appliqué par transfertFeesFromBuyer (InternalFunctions.sol)
+// — 30 tokens exprimés dans la plus petite unité, comme totalAmount (6
+// décimales pour USDC/USDT/EURC, les seules devises supportées).
+const MIN_FEES_AMOUNT = 30_000_000n;
+
 // Miroir client de la partie calcul de transfertFeesFromBuyer (pas le
 // transfert lui-même) — sert à estimer en temps réel, avant que la
 // transaction soit Signed, le montant des frais et le montant net qui en
@@ -139,8 +147,16 @@ export function estimateDepositAmount(tx: OnChainTransaction): bigint {
 // s'exécute on-chain à la double signature, sur les valeurs alors en
 // vigueur. Une fois Signed, préférer tx.feesAmount/tx.netAmountDue (figés,
 // fiables même si feesRateBps change depuis).
+//
+// Reproduit aussi le plafonnement à totalAmount fait côté contrat
+// (transfertFeesFromBuyer) : sur une transaction dont totalAmount est
+// inférieur au plancher, les frais affichés valent totalAmount (pas
+// MIN_FEES_AMOUNT) — sinon netAmountDue (totalAmount - fees/2) s'afficherait
+// négatif alors que la valeur on-chain réelle restera toujours positive.
 export function estimateFees(totalAmount: bigint, feesRateBps: number): { feesAmount: bigint; netAmountDue: bigint } {
-  const feesAmount = (totalAmount * BigInt(feesRateBps)) / 10000n;
+  let feesAmount = (totalAmount * BigInt(feesRateBps)) / 10000n;
+  if (feesRateBps > 0 && feesAmount < MIN_FEES_AMOUNT) feesAmount = MIN_FEES_AMOUNT;
+  if (feesAmount > totalAmount) feesAmount = totalAmount;
   return { feesAmount, netAmountDue: totalAmount - feesAmount / 2n };
 }
 
@@ -214,7 +230,7 @@ export function isRollbackEligible(tx: OnChainTransaction, livePosition?: Contai
 
 // Reflète exactement les conditions d'affichage de DepositPanel/RollbackPanel
 // (acheteur) et WithdrawPanel (fournisseur) dans TransactionDetail — sert à
-// afficher une bulle "Action requise" dans la liste des dossiers sans dupliquer
+// afficher une bulle "Action requise" dans la liste des contrats sans dupliquer
 // la logique de gating propre à chaque panneau. `null` = rien à faire pour
 // l'instant côté utilisateur connecté.
 export function pendingActionReason(tx: OnChainTransaction, role: "buyer" | "seller" | null): "deposit" | "rollback" | "withdraw" | null {

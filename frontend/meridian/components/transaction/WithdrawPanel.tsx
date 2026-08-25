@@ -72,7 +72,7 @@ export function WithdrawPanel({ transactionId, tx, onWithdrawn }: { transactionI
       </CardHeader>
 
       <p className="mb-4 text-sm text-muted">
-        Montant disponible au retrait :{" "}
+        Montant en attente:{" "}
         <span className="text-foam">
           {formatAmount(tx.pendingWithdrawalAmount, decimals)} {symbol}
         </span>
@@ -84,7 +84,7 @@ export function WithdrawPanel({ transactionId, tx, onWithdrawn }: { transactionI
         <p className="text-sm text-subtle">Vérification de la position du conteneur…</p>
       ) : !containerConditionMet ? (
         <p className="text-sm text-subtle">
-          Retrait bloqué : ce dossier exige{" "}
+          Retrait bloqué : ce contrat exige{" "}
           {tx.transactionCondition === TransactionCondition.AtTheBeginningOfDelivery
             ? "que le conteneur soit parti"
             : "que le conteneur soit arrivé à destination"}{" "}

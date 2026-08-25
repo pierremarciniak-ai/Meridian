@@ -51,18 +51,10 @@ interface IMeridianNFT {
 // contrat n'a pas vocation à être déployé seul (pas de fonctions externes).
 abstract contract InternalFunctions is Ownable {
     using SafeCast for uint256;
-    // Redéclaré ici pour la même raison que SafeCast ci-dessus : un
-    // "using ... for" ne s'hérite pas, et applySignedContainerPosition /
-    // withdrawFundsCore / rollbackDepositCore (dans ce fichier) en ont
-    // besoin directement, pas seulement Meridian.sol.
     using SafeERC20 for IERC20;
     using MessageHashUtils for bytes32;
     using ECDSA for bytes32;
 
-    // uint96 (et non uint256) pour que ce compteur se packe avec le
-    // _owner (address, 20 bytes) hérité d'Ownable dans le même slot de
-    // storage (20+12=32 bytes) au lieu d'occuper un slot dédié. uint96 max
-    // ≈ 7,9×10^28 : aucune limite réaliste pour un compteur de transactions.
     uint96 public internalID;
     
     uint16 public feesRateBps; // ex: 250 = 2,50 %, sur 10000
@@ -115,14 +107,6 @@ abstract contract InternalFunctions is Ownable {
         address userAddress;
     }
 
-    // Champs réordonnés (par rapport à l'ordre "logique") pour maximiser le
-    // packing de storage : Solidity ne packe que des champs value-type
-    // consécutifs dans la déclaration, et un struct/string/array force
-    // toujours un nouveau slot avant ET après lui. On regroupe donc tous les
-    // enums/bools en tête (1 slot), les deux User ensuite (1 slot chacun,
-    // déjà compacts en interne), puis les uint réduits (timestamp en
-    // uint40, montants en uint128) group par group de 32 bytes, et les deux
-    // string en tout dernier.
     struct Transaction {
         WorkflowStatus workflowStatus;
         Currency currency;
@@ -141,23 +125,14 @@ abstract contract InternalFunctions is Ownable {
         bool partialAmountRefunded;
         bool buyerNFTMinted;
         bool sellerNFTMinted;
-        // Distinguent la cause d'un TransactionAborted : sanction détectée
-        // (ici) d'une échéance simplement dépassée (checkAbortedStatus, qui
-        // ne touche à aucun des deux). Sans ça, le front ne peut pas savoir
-        // pourquoi un dossier a été abandonné et affiche à tort le message
-        // "échéance dépassée" même quand la vraie cause est une sanction.
         bool buyerSanctioned;
         bool sellerSanctioned;
 
         User buyer;
         User seller;
 
-        // uint40 suffit très largement (valide jusqu'à l'an 36812).
         uint40 transactionCancellingDate;
 
-        // Montants : uint128 suffit très largement pour des montants de
-        // tokens (max ≈ 3,4×10^38, aucune stablecoin n'en approche). Les
-        // paires ci-dessous remplissent chacune un slot de 32 bytes pile.
         uint128 advanceAmount;
         uint128 totalAmount;
         uint128 depositedAmount;
@@ -168,19 +143,8 @@ abstract contract InternalFunctions is Ownable {
 
         string billNumber;
         string containerReference;
-        // uint creationDate;
-        // uint signedDate;
-        // uint cancellationDate;
-        // uint completionDate;
     }
 
-    // TransactionDetailsInput / ShipPosition restent volontairement en uint
-    // (256) : ce sont des structs calldata-only,
-    // jamais écrites en storage. L'encodage ABI/calldata word-aligne chaque
-    // champ sur 32 bytes quelle que soit sa largeur déclarée, donc les
-    // réduire n'apporterait aucun gain de gas ici, juste des casts en plus
-    // au moment de les copier vers Transaction (uint128/uint40, voir
-    // saveCommonTransactionDetails et Meridian.initializeTransaction).
     struct TransactionDetailsInput {
         Currency currency;
         TransactionCondition transactionCondition;
@@ -197,16 +161,12 @@ abstract contract InternalFunctions is Ownable {
         uint timestamp;
     }
 
-    //mapping (bytes32 => bool) public IDsUsed;
     mapping (bytes32 => Transaction) internal TransactionsList;
-    //mapping (address => mapping(bytes32 => bool)) public UserTransactions;
 
     mapping (Currency => IERC20) public tokenAddresses;
-    //mapping (address => mapping (Currency => uint)) public pendingWithdrawals;
 
     address public sanctionsOracleAddress;
     address public mockSanctionsOracleAddress;
-    // Adresse zéro = minting désactivé (checkSignatures ne fait alors rien).
     address public meridianNFTAddress;
     // Adresse dédiée (contrôlée par notre backend qui interroge l'API
     // VesselFinder), distincte du owner : VesselFinder n'expose aucun oracle
@@ -253,11 +213,6 @@ abstract contract InternalFunctions is Ownable {
         _;
     }
 
-    // Dédié à mintTransactionNFTBuyer/mintTransactionNFTSeller : contrairement
-    // à depositFunds/withdrawFunds (qui doivent rester fermés une fois
-    // TransactionCompleted), le NFT est un reçu censé rester mintable même
-    // une fois le dossier soldé — donc un modifier séparé plutôt qu'élargir
-    // onlySignedTransaction, qui est aussi utilisé par ces deux-là.
     modifier onlySignedOrCompletedTransaction(bytes32 _transactionID) {
         WorkflowStatus _status = TransactionsList[_transactionID].workflowStatus;
         require(
@@ -271,39 +226,6 @@ abstract contract InternalFunctions is Ownable {
         require(bytes(TransactionsList[_transactionID].containerReference).length > 0, "Container reference cannot be empty");
         _;
     }
-
-    // Comme transactionDateNotOverdue ci-dessous : abortIfOverdue est appelé
-    // en premier pour laisser l'éventuelle transition vers TransactionAborted
-    // se produire et persister. Le require qui suit ne peut alors revert que
-    // dans les cas où abortIfOverdue n'a rien muté (date non dépassée et
-    // statut pas déjà aborted), donc aucune écriture n'est jamais perdue.
-    // modifier onlyAbortedTransaction(bytes32 _transactionID) {
-    //     checkAbortedStatus(_transactionID);
-    //     require(TransactionsList[_transactionID].workflowStatus == WorkflowStatus.TransactionAborted, "Transaction is not aborted");
-    //     _;
-    // }
-
-    // checkWithdrawalEligibility et checkRollbackEligibility existaient ici
-    // comme modifiers ; remplacés par des appels directs à
-    // withdrawalEligibilityStatus / rollbackEligibilityStatus depuis
-    // withdrawFundsCore / rollbackDepositCore (voir plus bas) : ces deux
-    // actions ont désormais chacune deux points d'entrée externes
-    // (withdrawFunds/withdrawFundsWithPositionUpdate,
-    // rollbackDeposit/rollbackDepositWithPositionUpdate), et un modifier
-    // attaché à deux fonctions dupliquerait son bytecode à chaque site
-    // d'attache — un appel de fonction interne, non.
-
-    // Contrairement aux autres modifiers, celui-ci ne fait volontairement PAS
-    // de revert quand la condition échoue : un revert annulerait aussi le
-    // passage à TransactionAborted qu'on veut justement persister. À la place,
-    // si la date est dépassée, on met à jour le statut et on n'exécute pas le
-    // `_;` (donc l'action demandée par l'appelant n'a pas lieu), mais la
-    // transaction on-chain se termine normalement, avec l'écriture conservée.
-    // modifier transactionDateNotOverdue(bytes32 _transactionID) {
-    //     if (!checkAbortedStatus(_transactionID)) {
-    //         _;
-    //     }
-    // }
 
     modifier onlyUnsanctioned(address _userAddress) {
         bool _sanctionned = checkSanction(_userAddress);
@@ -331,12 +253,6 @@ abstract contract InternalFunctions is Ownable {
     event totalAmountRefunded(bytes32 indexed transactionID, address indexed buyer, uint amount, Currency currency);
     event partialAmountRefunded(bytes32 indexed transactionID, address indexed buyer, uint amount, Currency currency);
     event AddressSanctioned(address indexed userAddress);
-    // Émis quand l'appel à l'oracle échoue (pas de contrat à l'adresse
-    // configurée, revert interne, panne...) : checkSanction traite alors
-    // l'adresse comme NON sanctionnée pour ne pas bloquer la transaction
-    // (voir checkSanction) — cet event permet de repérer une panne d'oracle
-    // dans les logs, puisque le comportement on-chain ne la distingue sinon
-    // pas d'une vérification qui a simplement conclu "non sanctionné".
     event SanctionsOracleCallFailed(address indexed userAddress);
     event SanctionsOracleAddressUpdated(address indexed newOracle);
     event MockSanctionsOracleAddressUpdated(address indexed newMockOracle);
@@ -482,11 +398,33 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
     Transaction storage _transaction = TransactionsList[_transactionID];
 
     uint128 _feesAmount = uint128(uint256(_transaction.totalAmount) * feesRateBps / 10000);
+
+    //frais minimum de 30 stablecoin
+    if (feesRateBps > 0 && _feesAmount < 30_000_000) _feesAmount = 30_000_000;
+
+    // évite que le plancher dépasse totalAmount sur une très petite
+    // transaction, ce qui ferait revert netAmountDue (totalAmount - fees/2)
+    // par underflow
+    if (_feesAmount > _transaction.totalAmount) _feesAmount = _transaction.totalAmount;
+
     _transaction.feesAmount = _feesAmount;
     _transaction.netAmountDue = _transaction.totalAmount - (_feesAmount / 2);
 
+    // La part de frais du fournisseur (feesAmount/2) est déduite de l'acompte
+    // (1er dépôt) plutôt que du solde restant : le solde restant vaut alors
+    // totalAmount - advanceAmount (valeur d'origine), inchangé par les frais.
+    // Si l'acompte est trop petit pour absorber toute la part, il tombe à 0
+    // et le manque retombe sur le solde restant via netAmountDue (voir
+    // calculateDepositAmount).
+    uint128 _sellerFeesShare = _feesAmount / 2;
+    if (_transaction.advanceAmount > _sellerFeesShare) {
+        _transaction.advanceAmount -= _sellerFeesShare;
+    } else {
+        _transaction.advanceAmount = 0;
+    }
 
-    // plafonne advanceAmount afin de ne pas dépasser netAmountDue en cas de grand acompte
+    // plafonne advanceAmount à netAmountDue : garde-fou pour le modèle Free,
+    // où l'acompte est saisi manuellement et peut dépasser totalAmount.
     if (_transaction.advanceAmount > _transaction.netAmountDue) {
         _transaction.advanceAmount = _transaction.netAmountDue;
     }
@@ -530,36 +468,8 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
         _data.transactionCancellingDate = _transaction.transactionCancellingDate;
         _data.containerReference = _transaction.containerReference;
 
-        //IMeridianNFT(meridianNFTAddress).mintTransactionPair(_data);_mintOne
         _tokenId = IMeridianNFT(meridianNFTAddress).mintOne(_to, _data);
-    }
-
-    // Fonction partagée : applique l'abandon si la date est dépassée, et
-    // retourne true si c'est le cas (permet au modifier ET à la fonction
-    // publique checkAndAbortIfOverdue de réutiliser exactement la même
-    // logique, sans duplication).
-    // Convention : transactionCancellingDate correspond à minuit UTC du
-    // *lendemain* du dernier jour valide (ex. "valide jusqu'au 15/09" ->
-    // stocké comme le 16/09 à 00:00:00 UTC). La comparaison >= évite le
-    // nombre magique "23:59:59" côté front et reste lisible : la transaction
-    // expire dès que block.timestamp atteint ou dépasse cette date pivot.
-    // function checkAbortedStatus(bytes32 _transactionID) internal returns (bool) {
-    //     Transaction storage _transaction = TransactionsList[_transactionID];
-
-    //     if (block.timestamp >= _transaction.transactionCancellingDate) {
-    //         if (_transaction.workflowStatus != WorkflowStatus.TransactionAborted) {
-    //             _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
-                
-    //             emit TransactionDateOverdue(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
-    //             emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
-    //         }
-    //         return true;
-    //     } else if (_transaction.workflowStatus == WorkflowStatus.TransactionAborted) {
-    //         return true;
-    //     } else {
-    //         return false;
-    //     }
-    // }   
+    }  
 
     function withdrawalEligibilityStatus(bytes32 _transactionID) internal view returns (bool _status) {
         Transaction storage _transaction = TransactionsList[_transactionID];
@@ -592,10 +502,6 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
             (_transaction.transactionCondition == TransactionCondition.AtTheEndOfDelivery &&
             _transaction.containerPositionStatus != ContainerPositionStatus.AtDestination)) {
                 
-                // _transaction.workflowStatus = WorkflowStatus.TransactionAborted;
-
-                // emit TransactionAborted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
-
                 return true;
             }
         }
@@ -611,17 +517,18 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
     // l'utilisateur (acheteur/vendeur), via withdrawFundsWithPositionUpdate /
     // rollbackDepositWithPositionUpdate, qui paie le gas de la mise à jour.
     // _deadline borne la durée de validité de la signature (anti-rejeu d'une
-    // vieille attestation), et address(this) lie la signature à ce contrat
-    // précis (anti-rejeu inter-contrats/inter-réseaux).
-    function applySignedContainerPosition(
-        bytes32 _transactionID,
-        ContainerPositionStatus _status,
-        uint256 _deadline,
-        bytes calldata _signature
-    ) internal {
+    // vieille attestation), address(this) lie la signature à ce contrat
+    // précis (anti-rejeu inter-contrats) et block.chainid à ce réseau précis
+    // (anti-rejeu inter-réseaux) : sans ce dernier, transactionID seul ne
+    // suffit pas à distinguer deux réseaux — il vaut keccak256(internalID,
+    // buyer), et internalID redémarre à 0 sur chaque déploiement, donc deux
+    // dossiers sans rapport sur deux chaînes différentes peuvent partager le
+    // même transactionID.
+    function applySignedContainerPosition(bytes32 _transactionID, ContainerPositionStatus _status, uint256 _deadline,
+    bytes calldata _signature) internal {
         require(block.timestamp <= _deadline, "Container position signature expired");
 
-        bytes32 _messageHash = keccak256(abi.encodePacked(_transactionID, _status, _deadline, address(this)));
+        bytes32 _messageHash = keccak256(abi.encodePacked(_transactionID, _status, _deadline, address(this), block.chainid));
         address _signer = _messageHash.toEthSignedMessageHash().recover(_signature);
 
         require(_signer == containerPositionOracleAddress, "Invalid container position signature");
@@ -631,10 +538,6 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
         emit ContainerPositionReported(_transactionID, _status);
     }
 
-    // Logique partagée par withdrawFunds et withdrawFundsWithPositionUpdate —
-    // une fonction interne plutôt qu'un modifier commun aux deux, pour ne pas
-    // dupliquer ce corps à chaque site d'attache (voir la note plus haut sur
-    // l'ex-modifier checkWithdrawalEligibility).
     function withdrawFundsCore(bytes32 _transactionID) internal {
         withdrawalEligibilityStatus(_transactionID);
 
@@ -670,8 +573,6 @@ function transfertFeesFromBuyer(bytes32 _transactionID) internal {
         }
     }
 
-    // Logique partagée par rollbackDeposit et rollbackDepositWithPositionUpdate
-    // — même raison que withdrawFundsCore ci-dessus.
     function rollbackDepositCore(bytes32 _transactionID) internal {
         require(rollbackEligibilityStatus(_transactionID), "Transaction is not eligible for rollback");
 

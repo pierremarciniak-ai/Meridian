@@ -224,7 +224,7 @@ describe("Meridian", function () {
 
   // Signe une attestation de position hors-chaîne, exactement comme le ferait
   // la route API (voir app/api/container-position/sign côté front) : hash
-  // packé (transactionID, status, deadline, adresse du contrat) puis
+  // packé (transactionID, status, deadline, adresse du contrat, chainid) puis
   // personal_sign — doit correspondre bit à bit à
   // applySignedContainerPosition (InternalFunctions.sol), qui reconstruit le
   // même hash et vérifie via ECDSA.recover + toEthSignedMessageHash.
@@ -235,9 +235,10 @@ describe("Meridian", function () {
     deadline: number
   ) {
     const { ethers, meridian, containerPositionOracle } = ctx;
+    const { chainId } = await ethers.provider.getNetwork();
     const messageHash = ethers.solidityPackedKeccak256(
-      ["bytes32", "uint8", "uint256", "address"],
-      [transactionID, status, deadline, await meridian.getAddress()]
+      ["bytes32", "uint8", "uint256", "address", "uint256"],
+      [transactionID, status, deadline, await meridian.getAddress(), chainId]
     );
     return containerPositionOracle.signMessage(ethers.getBytes(messageHash));
   }
@@ -1537,6 +1538,53 @@ describe("Meridian", function () {
         expect((await usdc.balanceOf(seller.address)) - sellerBalanceBefore).to.equal(netAmountDue);
       });
 
+      it("déduit la part de frais du fournisseur de l'acompte, pas du solde restant (modèle PartialLocked)", async function () {
+        const ctx = await deployFixture();
+        const { meridian, usdc, buyer } = ctx;
+        await meridian.setFeesRateBps(500); // 5%
+
+        const totalAmount = 1000n * 10n ** 6n;
+        const { transactionID } = await createSignedBySellerOnly(ctx, {
+          transactionModel: TransactionModel.PartialLocked,
+          // Pour PartialLocked/PartialImmediate, le contrat applique lui-même
+          // un pourcentage (30%/15%) à la valeur reçue comme advanceAmount :
+          // on lui transmet totalAmount, comme le fait le front (voir
+          // CreateShipmentForm.tsx).
+          advanceAmount: totalAmount,
+          totalAmount,
+        });
+
+        const feesAmount = (totalAmount * 500n) / 10000n; // 50
+        const sellerFeesShare = feesAmount / 2n; // 25
+        const netAmountDue = totalAmount - sellerFeesShare;
+        const originalAdvanceAmount = (totalAmount * 30n) / 100n; // 300, avant réduction
+
+        await usdc.connect(buyer).approve(await meridian.getAddress(), feesAmount);
+        await meridian.connect(buyer).signTransactionBuyer(transactionID);
+
+        // L'acompte stocké est déjà réduit de la part de frais du fournisseur.
+        const reducedAdvanceAmount = originalAdvanceAmount - sellerFeesShare; // 275
+        const afterSign = await meridian.getTransaction(transactionID);
+        expect(afterSign.advanceAmount).to.equal(reducedAdvanceAmount);
+
+        await usdc.connect(buyer).approve(await meridian.getAddress(), reducedAdvanceAmount);
+        await expect(meridian.connect(buyer).depositFunds(transactionID))
+          .to.emit(meridian, "FundsDeposited")
+          .withArgs(transactionID, buyer.address, reducedAdvanceAmount, Currency.USDC);
+
+        // Le solde restant vaut totalAmount - acompte d'origine (non réduit) :
+        // la totalité de la part de frais a déjà été absorbée par l'acompte.
+        const remainder = totalAmount - originalAdvanceAmount; // 700
+        await usdc.connect(buyer).approve(await meridian.getAddress(), remainder);
+        await expect(meridian.connect(buyer).depositFunds(transactionID))
+          .to.emit(meridian, "FundsDeposited")
+          .withArgs(transactionID, buyer.address, remainder, Currency.USDC);
+
+        const stored = await meridian.getTransaction(transactionID);
+        expect(stored.depositedAmount).to.equal(netAmountDue);
+        expect(stored.depositCompleted).to.equal(true);
+      });
+
       it("plafonne advanceAmount à netAmountDue s'il le dépassait (saisi avant que netAmountDue existe)", async function () {
         const ctx = await deployFixture();
         const { meridian, usdc, buyer } = ctx;
@@ -1566,6 +1614,65 @@ describe("Meridian", function () {
           .withArgs(transactionID, buyer.address, netAmountDue, Currency.USDC);
 
         expect((await meridian.getTransaction(transactionID)).depositCompleted).to.equal(true);
+      });
+
+      it("applique un plancher de 30 tokens quand 5% du montant n'atteint pas ce seuil", async function () {
+        const ctx = await deployFixture();
+        const { meridian, usdc, buyer, feesWallet } = ctx;
+        await meridian.setFeesRateBps(500); // 5%
+
+        // 5% de 200 = 10 tokens, sous le plancher de 30 : le plancher doit
+        // l'emporter sur le calcul proportionnel.
+        const totalAmount = 200n * 10n ** 6n;
+        const { transactionID } = await createSignedBySellerOnly(ctx, {
+          transactionModel: TransactionModel.FullLocked,
+          totalAmount,
+        });
+
+        const flooredFeesAmount = 30n * 10n ** 6n;
+        const netAmountDue = totalAmount - flooredFeesAmount / 2n;
+
+        await usdc.connect(buyer).approve(await meridian.getAddress(), flooredFeesAmount);
+
+        const feesWalletBalanceBefore = await usdc.balanceOf(feesWallet.address);
+
+        await expect(meridian.connect(buyer).signTransactionBuyer(transactionID))
+          .to.emit(meridian, "FeesPaid")
+          .withArgs(transactionID, buyer.address, feesWallet.address, flooredFeesAmount, Currency.USDC);
+
+        expect((await usdc.balanceOf(feesWallet.address)) - feesWalletBalanceBefore).to.equal(flooredFeesAmount);
+
+        const stored = await meridian.getTransaction(transactionID);
+        expect(stored.feesAmount).to.equal(flooredFeesAmount);
+        expect(stored.netAmountDue).to.equal(netAmountDue);
+      });
+
+      it("plafonne le plancher à totalAmount plutôt que de faire revert sur une très petite transaction", async function () {
+        const ctx = await deployFixture();
+        const { meridian, usdc, buyer, feesWallet } = ctx;
+        await meridian.setFeesRateBps(500); // 5%
+
+        // 5% de 10 = 0,5 token, très en dessous du plancher de 30 — qui
+        // dépasserait totalAmount si on ne le plafonnait pas, provoquant un
+        // underflow (donc un revert) sur netAmountDue = totalAmount - fees/2.
+        const totalAmount = 10n * 10n ** 6n;
+        const { transactionID } = await createSignedBySellerOnly(ctx, {
+          transactionModel: TransactionModel.FullLocked,
+          totalAmount,
+        });
+
+        await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+
+        const feesWalletBalanceBefore = await usdc.balanceOf(feesWallet.address);
+
+        // Ne doit pas revert : le plancher est plafonné à totalAmount.
+        await expect(meridian.connect(buyer).signTransactionBuyer(transactionID)).to.emit(meridian, "FeesPaid");
+
+        expect((await usdc.balanceOf(feesWallet.address)) - feesWalletBalanceBefore).to.equal(totalAmount);
+
+        const stored = await meridian.getTransaction(transactionID);
+        expect(stored.feesAmount).to.equal(totalAmount);
+        expect(stored.netAmountDue).to.equal(totalAmount - totalAmount / 2n);
       });
 
       it("n'a aucun effet quand feesRateBps vaut 0 (comportement par défaut, rétrocompatible)", async function () {
@@ -2219,9 +2326,10 @@ describe("Meridian", function () {
       const { transactionID } = await createAndSignTransaction(ctx);
 
       const deadline = (await futureDate(ethers, 0)) + 600;
+      const { chainId } = await ethers.provider.getNetwork();
       const messageHash = ethers.solidityPackedKeccak256(
-        ["bytes32", "uint8", "uint256", "address"],
-        [transactionID, ContainerPositionStatus.AtDestination, deadline, await meridian.getAddress()]
+        ["bytes32", "uint8", "uint256", "address", "uint256"],
+        [transactionID, ContainerPositionStatus.AtDestination, deadline, await meridian.getAddress(), chainId]
       );
       const wrongSignature = await other.signMessage(ethers.getBytes(messageHash));
 

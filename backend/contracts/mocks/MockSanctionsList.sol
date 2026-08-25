@@ -23,6 +23,10 @@ contract SanctionsList is Ownable {
 
     constructor() Ownable(msg.sender) {}
 
+    function setNewOwner(address _newOwner) external onlyOwner {
+        transferOwnership(_newOwner);
+    }    
+
     function setSanctioned(address _addr) external onlyOwner {
         sanctionedGeneration[_addr] = currentGeneration;
         emit AddressSanctioned(_addr);

@@ -337,6 +337,21 @@ body {
   border: 1px solid rgba(217, 165, 102, 0.34);
 }
 
+/* Note explicative neutre (ex. mécanisme des frais de service, renvoyée par
+   un astérisque) — contrairement à .action-banner, ne porte aucune couleur
+   sémantique (brass = action requise, danger = erreur...), pour ne jamais se
+   faire lire comme une alerte. */
+.info-note {
+  margin-top: 0.6rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-foam-400);
+  border: 1px solid var(--color-navy-700);
+}
+
 .action-banner {
   display: flex;
   align-items: center;

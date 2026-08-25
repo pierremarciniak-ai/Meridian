@@ -68,7 +68,7 @@ async function main() {
   await (await meridian.setTokenAddress(CURRENCY.EURC, await eurc.getAddress())).wait();
 
   // --- 4. Mint de tokens de test vers les comptes acheteur/fournisseur fixes ---
-  const amount = ethers.parseUnits("10000", 6);
+  const amount = ethers.parseUnits("100000", 6);
   for (const [label, to] of [
     ["acheteur", buyerAddress],
     ["fournisseur", sellerAddress],
@@ -100,12 +100,13 @@ async function main() {
 
   // --- 8. Configuration du wallet de frais (backend) ---
   await (await meridian.setFeesWalletAddress(feesWalletAddress)).wait();
-  await (await meridian.setFeesRateBps(1000)).wait(); // ex: 250 = 2,50 %, sur 10000
+  await (await meridian.setFeesRateBps(15)).wait(); // ex: 250 = 2,50 %, sur 10000
   console.log("FeesRateBps set: ", await meridian.feesRateBps());
 
   // --- 9. Transfert de propriété vers l'admin final, si différent du déployeur ---
   if (adminAddress && adminAddress.toLowerCase() !== deployer.address.toLowerCase()) {
     await (await meridian.setNewOwner(adminAddress)).wait();
+    await (await sanctionsList.setNewOwner(adminAddress)).wait();
     console.log(`\nPropriété transférée de ${deployer.address} vers ${adminAddress}.`);
   }
 

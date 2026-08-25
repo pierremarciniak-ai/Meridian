@@ -6,6 +6,7 @@ import { useAccount } from "wagmi";
 import { CopyChip } from "@/components/CopyChip";
 import { ContainerBoxIcon } from "@/components/icons";
 import { TxStatusLine } from "@/components/TxStatusLine";
+import { FeesExplainerNote } from "@/components/transaction/FeesExplainerNote";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Field } from "@/components/ui/Field";
@@ -42,7 +43,7 @@ function nowPlusMinutes(minutes: number) {
 }
 
 // onCreatedChange permet à la page d'ajuster sa mise en page une fois le
-// dossier créé (masquer "Espace fournisseur" et laisser "Dossier créé"
+// contrat créé (masquer "Espace fournisseur" et laisser "Contrat créé"
 // prendre toute la largeur) sans dupliquer l'état `created` côté page.
 export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (created: boolean) => void }) {
   const router = useRouter();
@@ -132,17 +133,17 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Dossier créé</CardTitle>
+          <CardTitle>Contrat créé</CardTitle>
         </CardHeader>
         <p className="text-sm text-muted">
-          Transmettez ces deux références à votre fournisseur : elles lui permettront d&apos;accepter le dossier.
+          Transmettez ces deux références à votre fournisseur : elles lui permettront d&apos;accepter le contrat.
         </p>
         <div className="mt-4 flex flex-col gap-2">
           <CopyChip label="Référence du contrat" value={created.id} chars={10} />
           <CopyChip label="Bon de commande" value={created.billNumber} chars={12} />
         </div>
         <div className="mt-6 flex gap-3">
-          <Button onClick={() => router.push(`/transaction/${created.id}`)}>Ouvrir le dossier</Button>
+          <Button onClick={() => router.push(`/transaction/${created.id}`)}>Ouvrir le contrat</Button>
           <Button
             variant="secondary"
             onClick={() => {
@@ -150,7 +151,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
               onCreatedChange?.(false);
             }}
           >
-            Créer un autre dossier
+            Créer un autre contrat
           </Button>
         </div>
       </Card>
@@ -232,11 +233,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
             label={`Montant total (${symbol || "…"})`}
-            hint={
-              feesEstimate > 0n
-                ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de service, à payer par l'acheteur à la double signature (en plus du dépôt).`
-                : undefined
-            }
+            hint={feesEstimate > 0n ? `~ ${formatAmount(feesEstimate, decimals)} ${symbol} de frais de service*` : undefined}
           >
             <input
               className="field-input"
@@ -266,6 +263,8 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
           )}
         </div>
 
+        {feesEstimate > 0n && <FeesExplainerNote />}
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Date d'expiration de la provision" hint={shortDeadline ? "Mode échéance courte activé (voir Outils de test)." : undefined}>
             <input
@@ -277,7 +276,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
             />
           </Field>
 
-          <Field label="Numéro de bon de commande" hint="Doit être communiqué au fournisseur pour qu'il accepte le dossier.">
+          <Field label="Numéro de bon de commande" hint="Doit être communiqué au fournisseur pour qu'il accepte le contrat.">
             <input
               className="field-input font-mono-tight"
               placeholder=""
@@ -291,7 +290,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
         <TxStatusLine stage={stage} error={error} />
 
         <Button type="submit" loading={isBusy} disabled={!isConnected || advanceTooHigh}>
-          {isConnected ? "Initier le dossier" : "Connectez votre portefeuille"}
+          {isConnected ? "Initier le contrat" : "Connectez votre portefeuille"}
         </Button>
       </form>
     </Card>

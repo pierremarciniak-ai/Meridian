@@ -101,8 +101,8 @@ export async function POST(request: NextRequest) {
 
   const messageHash = keccak256(
     encodePacked(
-      ["bytes32", "uint8", "uint256", "address"],
-      [transactionId as `0x${string}`, status, BigInt(deadline), meridianAddress],
+      ["bytes32", "uint8", "uint256", "address", "uint256"],
+      [transactionId as `0x${string}`, status, BigInt(deadline), meridianAddress, BigInt(chainId as number)],
     ),
   );
 

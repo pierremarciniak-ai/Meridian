@@ -22,7 +22,7 @@ export function Header() {
 
   // Un <Link> vers la route déjà affichée ne déclenche aucune navigation
   // (Next.js réutilise la page telle quelle) : les états locaux du tableau
-  // de bord (ex. l'écran "Dossier créé" après une création) restent figés,
+  // de bord (ex. l'écran "Contrat créé" après une création) restent figés,
   // et cliquer sur le logo depuis "/" n'a alors visiblement aucun effet. On
   // force un rechargement complet dans ce cas précis pour repartir d'un
   // tableau de bord propre, conformément à ce qu'on attend d'un clic sur le

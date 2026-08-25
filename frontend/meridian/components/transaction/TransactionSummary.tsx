@@ -84,7 +84,7 @@ export function TransactionSummary({
   // l'affichage avant signature et à dimensionner l'allowance à demander à
   // l'acheteur. currentEditor démarre toujours à Seller (voir
   // InternalFunctions.sol) : c'est donc systématiquement la signature de
-  // l'acheteur qui complète le dossier et déclenche le prélèvement — seul ce
+  // l'acheteur qui complète le contrat et déclenche le prélèvement — seul ce
   // rôle a besoin d'un flow d'approbation ici, jamais le fournisseur.
   const feesEstimate = tx.feesPaid ? tx.feesAmount : estimateFees(tx.totalAmount, feesRateBps).feesAmount;
 
@@ -140,7 +140,7 @@ export function TransactionSummary({
         <h3 className="label-caps mb-1 mt-6">Logistique</h3>
         <div className="divide-y" style={{ borderColor: "var(--color-navy-700)" }}>
           <Row label="Référence du conteneur">{tx.containerReference ? <span className="font-mono-tight">{tx.containerReference}</span> : "—"}</Row>
-          <Row label="Position du conteneur">{containerPositionStatusLabels[tx.containerPositionStatus]}</Row>
+          <Row label="Position du bateau">{containerPositionStatusLabels[tx.containerPositionStatus]}</Row>
         </div>
       </div>
 
@@ -174,11 +174,20 @@ export function TransactionSummary({
 
         <h3 className="label-caps mb-1 mt-6">Règlement</h3>
         <div className="divide-y" style={{ borderColor: "var(--color-navy-700)" }}>
-          <Row label="Déposé">
+          <Row label="Dépôt total de l'acheteur">
             {formatAmount(tx.depositedAmount, decimals)} {symbol}
           </Row>
-          <Row label="En attente de retrait">
+          <Row label="Dépôt courant de l'acheteur">
             {formatAmount(tx.pendingWithdrawalAmount, decimals)} {symbol}
+          </Row>
+          <Row label="Retrait total du fournisseur">
+            {/* Pas de compteur dédié côté contrat : depositedAmount n'est
+                jamais réduit par un retrait (seul un rollback le fait,
+                d'une quantité égale à ce qu'il retire de
+                pendingWithdrawalAmount) — la différence des deux reflète
+                donc fidèlement le cumul déjà retiré par le fournisseur,
+                y compris après un rollback partiel. */}
+            {formatAmount(tx.depositedAmount - tx.pendingWithdrawalAmount, decimals)} {symbol}
           </Row>
           <Row label="Signatures">
             <span className="flex items-center justify-end gap-3">
@@ -197,7 +206,7 @@ export function TransactionSummary({
         {canSign && (
           <div className="mt-4">
             {!role ? (
-              <p className="text-sm text-subtle">Seuls l&apos;acheteur et le fournisseur déclarés peuvent signer ce dossier.</p>
+              <p className="text-sm text-subtle">Seuls l&apos;acheteur et le fournisseur déclarés peuvent signer ce contrat.</p>
             ) : !myTurn ? (
               <p className="text-sm text-subtle">
                 En attente de la signature {role === "buyer" ? "du fournisseur" : "de l'acheteur"}
@@ -220,7 +229,7 @@ export function TransactionSummary({
                       disabled={insufficientFeeBalance || !tokenAddress || !meridianAddress}
                       loading={approveFeesAction.isBusy}
                     >
-                      Approuver {formatAmount(feesEstimate, decimals)} {symbol} de frais de service
+                      Approuver {formatAmount(feesEstimate, decimals)} {symbol} de frais de service pour signer
                     </Button>
                   </>
                 ) : (

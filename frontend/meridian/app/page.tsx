@@ -8,7 +8,7 @@ import { AlertIcon, WavesIcon } from "@/components/icons";
 import { useNativeCurrencySymbol } from "@/lib/web3/chain";
 
 export default function Home() {
-  // Une fois le dossier créé, CreateShipmentForm affiche l'écran "Dossier
+  // Une fois le contrat créé, CreateShipmentForm affiche l'écran "Contrat
   // créé" (référence du contrat + bon de commande à transmettre) : "Espace fournisseur" n'a plus rien à
   // faire sur cette même page à ce moment-là, donc on le masque et on laisse
   // l'écran de résultat prendre toute la largeur de la section.

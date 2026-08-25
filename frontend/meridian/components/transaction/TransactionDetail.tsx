@@ -64,7 +64,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
         <Card className="items-center text-center">
           <div className="flex flex-col items-center gap-3 py-6">
             <ContainerShipIcon className="h-8 w-8 text-subtle" />
-            <h1 className="text-lg font-semibold text-foam">Dossier introuvable</h1>
+            <h1 className="text-lg font-semibold text-foam">Contrat introuvable</h1>
             <p className="max-w-sm text-sm text-muted">
               Aucune transaction n&apos;existe pour cet identifiant sur ce réseau. Vérifiez le lien transmis, ou que votre
               portefeuille est bien connecté au bon réseau.
@@ -90,7 +90,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Numéro de bon de commande: {tx.billNumber || "Dossier sans référence"}</CardTitle>
+            <CardTitle>Numéro de bon de commande: {tx.billNumber || "Contrat sans référence"}</CardTitle>
             <div className="mt-2">
               <CopyChip label="Référence du contrat" value={id} chars={8} />
             </div>
@@ -114,7 +114,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       </Card>
 
       {!address && tx.workflowStatus !== WorkflowStatus.Finished && tx.workflowStatus !== WorkflowStatus.Aborted && (
-        <p className="text-center text-sm text-subtle">Connectez votre portefeuille pour agir sur ce dossier.</p>
+        <p className="text-center text-sm text-subtle">Connectez votre portefeuille pour agir sur ce contrat.</p>
       )}
 
       {tx.workflowStatus === WorkflowStatus.Initialized && !hasSeller(tx) && role !== "buyer" && (
@@ -123,7 +123,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       {tx.workflowStatus === WorkflowStatus.Initialized && !hasSeller(tx) && role === "buyer" && (
         <Card>
           <p className="text-sm text-subtle">
-            En attente qu&apos;un fournisseur accepte ce dossier. Transmettez-lui la référence du contrat et le numéro
+            En attente qu&apos;un fournisseur accepte ce contrat. Transmettez-lui la référence du contrat et le numéro
             de bon de commande.
           </p>
         </Card>
@@ -137,7 +137,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
             <CardHeader>
               <CardTitle>Logistique & conditions</CardTitle>
             </CardHeader>
-            <p className="text-sm text-subtle">Seuls l&apos;acheteur et le fournisseur déclarés peuvent modifier ce dossier.</p>
+            <p className="text-sm text-subtle">Seuls l&apos;acheteur et le fournisseur déclarés peuvent modifier ce contrat.</p>
           </Card>
         ))}
 
@@ -150,7 +150,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
           {isRollbackEligible(tx, livePosition) ? (
             <>
               <p className="text-sm text-danger">
-                La date d&apos;expiration de la provision est dépassée. Vous pouvez récupérer votre dépôt, le dossier
+                La date d&apos;expiration de la provision est dépassée. Vous pouvez récupérer votre dépôt, le contrat
                 reste actif et vous pourrez à nouveau effectuer le dépôt par la suite si vous le souhaitez.
               </p>
               <RollbackPanel
@@ -192,7 +192,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       {tx.workflowStatus === WorkflowStatus.Signed && !role && (
         <Card>
           <p className="text-sm text-subtle">
-            Dossier signé par les deux parties — en attente de dépôt par l&apos;acheteur puis de retrait par le fournisseur.
+            Contrat signé par les deux parties — en attente de dépôt par l&apos;acheteur puis de retrait par le fournisseur.
           </p>
         </Card>
       )}
@@ -200,7 +200,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       {tx.workflowStatus === WorkflowStatus.Finished && (
         <Card>
           <CardHeader>
-            <CardTitle>Dossier soldé</CardTitle>
+            <CardTitle>Contrat soldé</CardTitle>
           </CardHeader>
           <p className="text-sm" style={{ color: "#86efac" }}>
             {formatAmount(tx.depositedAmount, decimals)} {symbol} déposés par l&apos;acheteur et intégralement reversés au
@@ -220,7 +220,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
       {tx.workflowStatus === WorkflowStatus.Aborted && (
         <Card>
           <CardHeader>
-            <CardTitle>Dossier abandonné</CardTitle>
+            <CardTitle>Contrat abandonné</CardTitle>
             <AlertIcon className="h-6 w-6 text-danger" />
           </CardHeader>
           <p className="text-sm text-danger">
@@ -228,7 +228,7 @@ export function TransactionDetail({ id }: { id: `0x${string}` }) {
               ? "L'acheteur a été détecté comme sanctionné au moment de sa signature."
               : tx.sellerSanctioned
                 ? "Le fournisseur a été détecté comme sanctionné (à la signature ou au retrait)."
-                : "Une sanction a été détectée sur ce dossier."}
+                : "Une sanction a été détectée sur ce contrat."}
           </p>
           {role === "buyer" && canRollbackDeposit(tx) && <RollbackPanel transactionId={id} tx={tx} onRolledBack={() => refetch()} />}
         </Card>

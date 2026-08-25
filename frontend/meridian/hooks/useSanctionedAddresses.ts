@@ -10,7 +10,7 @@ import { sanctionsListAbi } from "@/lib/web3/abi/sanctionsList";
 // côté contrat). On reconstruit donc la liste des adresses actuellement
 // sanctionnées en deux temps : (1) rejouer l'historique des events
 // AddressSanctioned pour obtenir l'ensemble des adresses ayant un jour été
-// sanctionnées (même patron que useMyShipmentIds pour les dossiers), puis
+// sanctionnées (même patron que useMyShipmentIds pour les contrats), puis
 // (2) vérifier le statut réel de chacune via isSanctioned, qui lui tient
 // compte des levées individuelles et des unSetAllSanctioned.
 export function useSanctionedAddresses(oracleAddress: Address | undefined) {

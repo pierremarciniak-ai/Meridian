@@ -44,8 +44,8 @@ export function OracleDashboard() {
   return (
     <div className="flex flex-col gap-6">
       <p className="text-sm text-muted">
-        Ouvrez un dossier pour reporter sa position de conteneur — le panneau de report apparaît directement sur sa
-        page une fois le dossier signé.
+        Ouvrez un contrat pour reporter sa position de conteneur — le panneau de report apparaît directement sur sa
+        page une fois le contrat signé.
       </p>
       <OpenShipmentPanel />
     </div>

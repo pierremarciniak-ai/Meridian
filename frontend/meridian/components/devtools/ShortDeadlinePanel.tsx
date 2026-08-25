@@ -21,7 +21,7 @@ export function ShortDeadlinePanel() {
       </CardHeader>
       <p className="mb-4 text-sm text-muted">
         Ajoute l&apos;heure et les minutes aux champs de date (échéance d&apos;annulation, date de départ, date
-        d&apos;arrivée) à la création d&apos;un dossier et lors de la mise à jour des conditions, pour pouvoir fixer des
+        d&apos;arrivée) à la création d&apos;un contrat et lors de la mise à jour des conditions, pour pouvoir fixer des
         échéances dans quelques minutes plutôt qu&apos;un jour entier au minimum — utile pour tester l&apos;abandon
         automatique, <code>rollbackDeposit</code>, ou différentes combinaisons de conditions sans attendre
         indéfiniment, y compris sur un réseau réel.

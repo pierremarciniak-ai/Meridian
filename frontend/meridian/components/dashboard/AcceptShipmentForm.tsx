@@ -14,9 +14,9 @@ import { useMeridianAddress } from "@/lib/web3/contracts";
 
 const TRANSACTION_ID_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-// Contrairement à un simple "suivre un dossier" (retiré volontairement pour
+// Contrairement à un simple "suivre un contrat" (retiré volontairement pour
 // ne pas permettre de consulter n'importe quelle transaction depuis le
-// tableau de bord), ce formulaire n'ouvre le dossier qu'après acceptation
+// tableau de bord), ce formulaire n'ouvre le contrat qu'après acceptation
 // effective en tant que fournisseur.
 export function AcceptShipmentForm() {
   const router = useRouter();
@@ -59,7 +59,7 @@ export function AcceptShipmentForm() {
         <LifebuoyIcon className="h-6 w-6 text-subtle" />
       </CardHeader>
       <p className="mb-4 text-sm text-muted">
-        Renseignez les deux références transmises par l&apos;acheteur pour endosser le rôle de fournisseur sur son dossier.
+        Renseignez les deux références transmises par l&apos;acheteur pour endosser le rôle de fournisseur sur son contrat.
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <Field label="Référence du contrat (transaction ID)" error={idError ?? undefined}>
@@ -82,7 +82,7 @@ export function AcceptShipmentForm() {
         </Field>
         <TxStatusLine stage={stage} error={error} />
         <Button type="submit" disabled={!isConnected} loading={isBusy}>
-          {isConnected ? "Accepter le dossier" : "Connectez votre portefeuille"}
+          {isConnected ? "Accepter le contrat" : "Connectez votre portefeuille"}
         </Button>
       </form>
     </Card>

@@ -21,7 +21,7 @@ export function MyShipmentsList() {
     return shipments.filter(({ id, tx }) => id.toLowerCase().includes(q) || tx.billNumber.toLowerCase().includes(q));
   }, [shipments, query]);
 
-  // Nombre de dossiers pour lesquels le wallet connecté (acheteur ou
+  // Nombre de contrats pour lesquels le wallet connecté (acheteur ou
   // fournisseur) a une action disponible : dépôt, retrait, ou signature en
   // attente — mêmes conditions que les bulles de ShipmentRow, pas de logique
   // dupliquée.
@@ -38,7 +38,7 @@ export function MyShipmentsList() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Mes dossiers</CardTitle>
+        <CardTitle>Mes contrats</CardTitle>
         <Button variant="ghost" onClick={() => refresh()} disabled={!isConnected || isLoading}>
           Rafraîchir
         </Button>
@@ -48,19 +48,19 @@ export function MyShipmentsList() {
         <div className="action-banner">
           <AlertIcon className="h-4 w-4 shrink-0" />
           {pendingCount > 1
-            ? `${pendingCount} dossiers nécessitent une action de votre part.`
-            : "1 dossier nécessite une action de votre part."}
+            ? `${pendingCount} contrats nécessitent une action de votre part.`
+            : "1 contrat nécessite une action de votre part."}
         </div>
       )}
 
       {!isConnected && (
         <p className="flex flex-col items-center gap-3 py-10 text-center text-sm text-subtle">
           <ContainerShipIcon className="h-8 w-8 text-subtle" />
-          Connectez votre portefeuille pour retrouver les dossiers où vous êtes acheteur ou fournisseur.
+          Connectez votre portefeuille pour retrouver les contrats où vous êtes acheteur ou fournisseur.
         </p>
       )}
 
-      {isConnected && isLoading && shipments.length === 0 && <p className="py-6 text-center text-sm text-subtle">Recherche des dossiers…</p>}
+      {isConnected && isLoading && shipments.length === 0 && <p className="py-6 text-center text-sm text-subtle">Recherche des contrats…</p>}
 
       {isConnected && error && (
         <p className="flex flex-col items-center gap-3 py-10 text-center text-sm text-danger">
@@ -72,7 +72,7 @@ export function MyShipmentsList() {
       {isConnected && !isLoading && !error && shipments.length === 0 && (
         <p className="flex flex-col items-center gap-3 py-10 text-center text-sm text-subtle">
           <ContainerShipIcon className="h-8 w-8 text-subtle" />
-          Aucun dossier pour l&apos;instant. Créez-en un, ou acceptez-en un en tant que fournisseur.
+          Aucun contrat pour l&apos;instant. Créez-en un, ou acceptez-en un en tant que fournisseur.
         </p>
       )}
 
@@ -98,7 +98,7 @@ export function MyShipmentsList() {
 
       {isConnected && !isLoading && !error && shipments.length > 0 && filtered.length === 0 && (
         <p className="py-6 text-center text-sm text-subtle">
-          Aucun dossier ne correspond à cette recherche parmi ceux où vous êtes acheteur ou fournisseur.
+          Aucun contrat ne correspond à cette recherche parmi ceux où vous êtes acheteur ou fournisseur.
         </p>
       )}
     </Card>

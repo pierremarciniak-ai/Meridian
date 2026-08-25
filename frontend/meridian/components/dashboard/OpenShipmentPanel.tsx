@@ -9,9 +9,9 @@ import { Field } from "@/components/ui/Field";
 
 const TRANSACTION_ID_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 
-// Navigation pure (aucun appel de contrat) : "Mes dossiers" ne liste que les
-// dossiers où le wallet connecté est acheteur ou vendeur, donc quiconque a
-// juste besoin d'ouvrir un dossier existant sans être ni l'un ni l'autre
+// Navigation pure (aucun appel de contrat) : "Mes contrats" ne liste que les
+// contrats où le wallet connecté est acheteur ou vendeur, donc quiconque a
+// juste besoin d'ouvrir un contrat existant sans être ni l'un ni l'autre
 // (typiquement le wallet configuré comme oracle de position de conteneur)
 // n'avait aucun moyen d'y accéder depuis l'accueil.
 export function OpenShipmentPanel() {
@@ -33,12 +33,12 @@ export function OpenShipmentPanel() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Ouvrir un dossier</CardTitle>
+        <CardTitle>Ouvrir un contrat</CardTitle>
         <CompassIcon className="h-6 w-6 text-subtle" />
       </CardHeader>
       <p className="mb-4 text-sm text-muted">
-        Accédez directement à un dossier dont vous connaissez la référence du contrat — utile par exemple pour le
-        wallet configuré comme oracle de position de conteneur, qui n&apos;apparaît jamais dans « Mes dossiers ».
+        Accédez directement à un contrat dont vous connaissez la référence — utile par exemple pour le
+        wallet configuré comme oracle de position de conteneur, qui n&apos;apparaît jamais dans « Mes contrats ».
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 sm:flex-row sm:items-end">
         <div className="flex-1">

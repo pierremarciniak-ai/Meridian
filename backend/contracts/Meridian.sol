@@ -9,9 +9,6 @@ import "./InternalFunctions.sol";
 
 contract Meridian is InternalFunctions, ReentrancyGuard {
     using SafeERC20 for IERC20;
-    // Un "using ... for" déclaré dans InternalFunctions (contrat parent) ne
-    // s'hérite pas automatiquement : il faut le redéclarer ici pour pouvoir
-    // utiliser .toUint40()/.toUint128() dans ce fichier.
     using SafeCast for uint256;
 
     function setTokenAddress(Currency _currency, address _tokenAddress) external onlyOwner {
@@ -82,6 +79,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
     }
 
     function setFeesRateBps(uint16 _feesRateBps) external onlyOwner {
+        require(_feesRateBps <= 10000, "Fee rate cannot exceed 100%");
         feesRateBps = _feesRateBps;
 
         emit FeesRateBpsUpdated(_feesRateBps);
@@ -101,8 +99,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         Transaction memory _transaction;
 
         _transaction.workflowStatus = WorkflowStatus.TransactionInitialized;
-        //_transaction.buyer = initializeUser(UserType.Buyer, msg.sender, checkSanction(msg.sender));
-        _transaction.buyer = initializeUser(UserType.Buyer, msg.sender); // Assuming buyer is not subjected to sanctions for now
+        _transaction.buyer = initializeUser(UserType.Buyer, msg.sender);
         _transaction.currency = _details.currency;
         _transaction.transactionCancellingDate = _details.transactionCancellingDate.toUint40();
         _transaction.transactionCondition = _details.transactionCondition;
@@ -133,8 +130,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         require(_billNumberHashSeller == _billNumberHashTransaction, "Bill number does not match");
 
         _transaction.workflowStatus = WorkflowStatus.TransactionCreated;
-        //_transaction.seller = initializeUser(UserType.Seller, msg.sender, checkSanction(msg.sender));
-        _transaction.seller = initializeUser(UserType.Seller, msg.sender); // Assuming seller is not subjected to sanctions for now
+        _transaction.seller = initializeUser(UserType.Seller, msg.sender);
 
         emit TransactionCreated(_transactionID, msg.sender);
     }
@@ -224,7 +220,7 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
     }    
 
     function depositFunds(bytes32 _transactionID) external nonReentrant onlyBuyer(_transactionID) onlySignedTransaction(_transactionID)
-    {//transactionDateNotOverdue(_transactionID) {
+    {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
         _transaction.sellerSanctioned = checkSanction(_transaction.seller.userAddress);
@@ -266,12 +262,8 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
     // InternalFunctions.sol) puis enchaîne sur le même retrait que
     // withdrawFunds — une seule transaction, un seul wallet à signer côté
     // utilisateur, et le wallet oracle backend ne dépense jamais de gas.
-    function withdrawFundsWithPositionUpdate(
-        bytes32 _transactionID,
-        ContainerPositionStatus _status,
-        uint256 _deadline,
-        bytes calldata _signature
-    ) external nonReentrant onlySeller(_transactionID) onlySignedTransaction(_transactionID) {
+    function withdrawFundsWithPositionUpdate(bytes32 _transactionID, ContainerPositionStatus _status, uint256 _deadline,
+    bytes calldata _signature) external nonReentrant onlySeller(_transactionID) onlySignedTransaction(_transactionID) {
         applySignedContainerPosition(_transactionID, _status, _deadline, _signature);
         withdrawFundsCore(_transactionID);
     }
@@ -280,13 +272,8 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         rollbackDepositCore(_transactionID);
     }
 
-    // Équivalent de withdrawFundsWithPositionUpdate côté acheteur.
-    function rollbackDepositWithPositionUpdate(
-        bytes32 _transactionID,
-        ContainerPositionStatus _status,
-        uint256 _deadline,
-        bytes calldata _signature
-    ) external nonReentrant onlyBuyer(_transactionID) {
+    function rollbackDepositWithPositionUpdate(bytes32 _transactionID, ContainerPositionStatus _status, uint256 _deadline,
+    bytes calldata _signature) external nonReentrant onlyBuyer(_transactionID) {
         applySignedContainerPosition(_transactionID, _status, _deadline, _signature);
         rollbackDepositCore(_transactionID);
     }

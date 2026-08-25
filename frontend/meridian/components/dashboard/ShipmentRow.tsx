@@ -48,9 +48,9 @@ export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
   const awaitingSignature = tx.workflowStatus === WorkflowStatus.Created;
   const myTurnToSign = awaitingSignature && isCurrentEditor(tx, roleKey);
   const depositProgress = depositProgressStatus(tx);
-  // Même calcul que pendingCount dans MyShipmentsList (bulle "N dossier(s)
+  // Même calcul que pendingCount dans MyShipmentsList (bulle "N contrat(s)
   // nécessite(nt) une action...") : actionReason seul ne couvre pas le cas
-  // "en attente de ma signature" (dossier encore en Created), à additionner
+  // "en attente de ma signature" (contrat encore en Created), à additionner
   // pour que la bordure corresponde exactement à ce que compte le bandeau.
   const needsMyAction = !!actionReason || myTurnToSign;
 
@@ -60,9 +60,9 @@ export function ShipmentRow({ id, tx }: { id: Hex; tx: OnChainTransaction }) {
       className="flex items-center justify-between gap-4 rounded-lg px-4 py-3.5 transition-colors"
       style={{
         background: "var(--color-navy-850)",
-        // Même ton que .action-banner (bulle "N dossier(s) nécessite(nt)
+        // Même ton que .action-banner (bulle "N contrat(s) nécessite(nt)
         // une action...") : permet de repérer visuellement, dans la liste,
-        // les dossiers concernés sans avoir à lire chaque bulle.
+        // les contrats concernés sans avoir à lire chaque bulle.
         border: needsMyAction ? "1px solid rgba(217, 165, 102, 0.5)" : "1px solid var(--color-navy-700)",
       }}
     >
