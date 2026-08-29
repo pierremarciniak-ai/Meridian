@@ -96,7 +96,7 @@ export function NftMintPanel({
             <div className="rounded-lg p-4" style={{ background: "var(--color-navy-900)", border: "1px solid var(--color-navy-600)" }}>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-foam">{metadata.name}</span>
-                <CopyChip label="NFT ID" value={meridianNFTAddress!} />
+                <CopyChip label="NFT ID" value={tokenId !== undefined ? tokenId.toString() : ""} />
               </div>
               <p className="mb-3 text-xs text-subtle">{metadata.description}</p>
               <div className="divide-y" style={{ borderColor: "var(--color-navy-700)" }}>

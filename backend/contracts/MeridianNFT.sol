@@ -3,17 +3,19 @@
 pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Base64.sol";
 
 /// @title MeridianNFT
 /// @notice Reçu NFT d'une transaction Meridian, un exemplaire par partie (acheteur/vendeur).
 /// @dev Metadata encodée en JSON on-chain (data URI base64, pas d'image pour
-/// l'instant). Le owner de ce contrat doit être l'adresse du contrat
-/// Meridian : c'est lui qui appelle mintOne une fois les deux signatures
-/// réunies.
-contract MeridianNFT is ERC721URIStorage, Ownable {
+/// l'instant), reconstruite à la volée dans tokenURI() à partir de
+/// _transactionData plutôt que stockée telle quelle (pas d'ERC721URIStorage) :
+/// la donnée brute suffit à la régénérer, la dupliquer en JSON stocké
+/// n'aurait fait qu'alourdir le gas du mint pour rien. Le owner de ce
+/// contrat doit être l'adresse du contrat Meridian : c'est lui qui appelle
+/// mintOne une fois les deux signatures réunies.
+contract MeridianNFT is ERC721, Ownable {
     uint256 private _nextTokenId;
 
     /// @notice Détails de transaction figés au moment du mint.
@@ -63,10 +65,15 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
     function mintOne(address _to, TransactionData calldata _data) external onlyOwner returns (uint256 tokenId) {
         tokenId = _nextTokenId++;
         _transactionData[tokenId] = _data;
-        string memory _uri = buildTokenURI(_data);
 
         _safeMint(_to, tokenId);
-        _setTokenURI(tokenId, _uri);
+    }
+
+    /// @notice URI de metadata du token, reconstruite à la volée (voir buildTokenURI).
+    function tokenURI(uint256 tokenId) public view override returns (string memory) {
+        _requireOwned(tokenId);
+        TransactionData memory _data = _transactionData[tokenId];
+        return buildTokenURI(_data);
     }
 
     /// @notice Construit la data URI JSON (base64) de metadata pour une transaction.
@@ -78,7 +85,7 @@ contract MeridianNFT is ERC721URIStorage, Ownable {
     /// ne sont pas échappés ici : un `"` dans ces champs casserait le JSON
     /// généré. Impact limité à l'affichage du NFT (aucun fonds en jeu), donc
     /// accepté tel quel pour l'instant.
-    function buildTokenURI(TransactionData calldata _data) public pure returns (string memory) {
+    function buildTokenURI(TransactionData memory _data) public pure returns (string memory) {
         bytes memory json = abi.encodePacked(
             '{"name":"Meridian Transaction ', _data.billNumber, '",',
             '"description":"On-chain escrow transaction details (Meridian).",',
