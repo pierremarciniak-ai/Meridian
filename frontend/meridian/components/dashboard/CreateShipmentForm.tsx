@@ -26,6 +26,7 @@ import { estimateAdvanceAmount, estimateFees } from "@/lib/domain/transaction";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
 import { useFeesRateBps } from "@/hooks/useFeesRateBps";
+import { useMinFeesAmount } from "@/hooks/useMinFeesAmount";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
@@ -71,6 +72,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
   const { decimals, symbol } = useErc20Meta(tokenAddress);
   const { execute, stage, error, receipt, isBusy } = useContractAction();
   const { feesRateBps } = useFeesRateBps();
+  const { minFeesAmount } = useMinFeesAmount();
 
   useEffect(() => {
     // shortDeadline vient de useShortDeadlineMode, résolu de façon
@@ -114,7 +116,7 @@ export function CreateShipmentForm({ onCreatedChange }: { onCreatedChange?: (cre
    * la double signature (voir TransactionSummary), sur le `totalAmount`
    * alors en vigueur.
    */
-  const feesEstimate = estimateFees(totalAmountParsed, feesRateBps).feesAmount;
+  const feesEstimate = estimateFees(totalAmountParsed, feesRateBps, minFeesAmount).feesAmount;
   const freeAdvanceParsed = isFreeModel ? parseAmountInput(advanceAmountInput, decimals) : 0n;
   const advanceTooHigh = isFreeModel && totalAmountParsed > 0n && freeAdvanceParsed >= totalAmountParsed;
 

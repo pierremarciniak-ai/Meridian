@@ -25,6 +25,11 @@ describe("MeridianNFT", function () {
     const meridianNFT = await ethers.deployContract("MeridianNFT", [await meridian.getAddress()]);
     await meridian.setMeridianNFTAddress(await meridianNFT.getAddress());
 
+    // feesRateBps vaut 15 par défaut dans le constructeur (comportement de
+    // production) : ramené à 0 ici, ces tests ne portent pas sur les frais
+    // et ne câblent pas feesWalletAddress.
+    await meridian.setFeesRateBps(0);
+
     const mintAmount = ethers.parseUnits("10000", 6);
     await usdc.mint(buyer.address, mintAmount);
 

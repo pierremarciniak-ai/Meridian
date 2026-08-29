@@ -19,6 +19,7 @@ import { estimateFees, isCurrentEditor, sameAddress } from "@/lib/domain/transac
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Allowance, useErc20Balance } from "@/hooks/useErc20";
 import { useFeesRateBps } from "@/hooks/useFeesRateBps";
+import { useMinFeesAmount } from "@/hooks/useMinFeesAmount";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { erc20Abi } from "@/lib/web3/abi/erc20";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
@@ -77,6 +78,7 @@ export function TransactionSummary({
   const approveFeesAction = useContractAction();
   const meridianAddress = useMeridianAddress();
   const { feesRateBps } = useFeesRateBps();
+  const { minFeesAmount } = useMinFeesAmount();
   const { tokenAddresses } = useTokenAddresses();
   const tokenAddress = tokenAddresses[tx.currency];
 
@@ -94,7 +96,7 @@ export function TransactionSummary({
    * l'acheteur qui complète le contrat et déclenche le prélèvement — seul ce
    * rôle a besoin d'un flow d'approbation ici, jamais le fournisseur.
    */
-  const feesEstimate = tx.feesPaid ? tx.feesAmount : estimateFees(tx.totalAmount, feesRateBps).feesAmount;
+  const feesEstimate = tx.feesPaid ? tx.feesAmount : estimateFees(tx.totalAmount, feesRateBps, minFeesAmount).feesAmount;
 
   const buyerAllowanceQuery = useErc20Allowance(tokenAddress, tx.buyer.userAddress, meridianAddress);
   const buyerBalanceQuery = useErc20Balance(tokenAddress, tx.buyer.userAddress);

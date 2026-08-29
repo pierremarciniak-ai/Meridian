@@ -50,7 +50,12 @@ export function AdminDashboard() {
     <div className="flex flex-col gap-6">
       <OwnerPanel owner={admin.owner} onUpdated={admin.refetch} />
       <TokenAddressesPanel tokenAddressesOnChain={admin.tokenAddressesOnChain} onUpdated={admin.refetch} />
-      <FeesPanel feesWalletAddress={admin.feesWalletAddress} feesRateBps={admin.feesRateBps} onUpdated={admin.refetch} />
+      <FeesPanel
+        feesWalletAddress={admin.feesWalletAddress}
+        feesRateBps={admin.feesRateBps}
+        minFeesAmount={admin.minFeesAmount}
+        onUpdated={admin.refetch}
+      />
       <OraclesPanel
         sanctionsOracleAddress={admin.sanctionsOracleAddress}
         mockSanctionsOracleAddress={admin.mockSanctionsOracleAddress}

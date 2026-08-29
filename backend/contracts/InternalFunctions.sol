@@ -59,6 +59,9 @@ abstract contract InternalFunctions is Ownable {
     /// @notice Taux de frais de service, en points de base (250 = 2,50 %, sur 10000).
     uint16 public feesRateBps;
 
+    /// @notice Montant minimum des frais de service
+    uint128 public minFeesAmount;
+
     /// @notice Cycle de vie d'une transaction.
     enum WorkflowStatus {
         UnSet,
@@ -197,6 +200,8 @@ abstract contract InternalFunctions is Ownable {
 
     constructor() Ownable(msg.sender) {
         internalID = 0;
+        feesRateBps = 15;
+        minFeesAmount = 30_000_000;
     }
 
     modifier onlyBuyer(bytes32 _transactionID) {
@@ -283,6 +288,7 @@ abstract contract InternalFunctions is Ownable {
     event FeesRateBpsUpdated(uint16 newFeesRateBps);
     event FeesPaid(bytes32 indexed transactionID, address indexed buyer, address feesWallet, uint amount, Currency currency);
     event FeesWalletAddressUpdated(address indexed newFeesWallet);
+    event MinimumFeesAmountUpdated(uint128 minFeesAmount);
 
     error AddressIsSanctioned(address accountAddress);
 
@@ -427,29 +433,30 @@ abstract contract InternalFunctions is Ownable {
     }
 
     /// @notice Calcule et prélève les frais de service auprès de l'acheteur.
-    /// @dev Frais = totalAmount * feesRateBps / 10000, avec un plancher de
-    /// 30 stablecoins dès que feesRateBps > 0, lui-même plafonné à
-    /// totalAmount (évite un netAmountDue négatif — donc un revert par
-    /// underflow — sur une très petite transaction). La moitié des frais
-    /// (à la charge du fournisseur) est déduite de l'acompte plutôt que du
-    /// solde restant ; si l'acompte est trop petit pour l'absorber
-    /// entièrement, il tombe à 0 et le manque retombe sur le solde restant
-    /// via netAmountDue (voir calculateDepositAmount). L'acompte est ensuite
-    /// replafonné à netAmountDue, garde-fou pour le modèle Free où il est
-    /// saisi manuellement et peut dépasser totalAmount.
+    /// @dev Frais = totalAmount * feesRateBps / 10000, avec un plancher de 30
+    /// stablecoins dès que feesRateBps > 0, sans plafond : les frais sont un
+    /// virement séparé depuis le wallet de l'acheteur, pas un prélèvement sur
+    /// l'escrow, donc ils peuvent dépasser totalAmount sur une petite
+    /// transaction. netAmountDue (= totalAmount - feesAmount/2) est alors
+    /// clampé à 0 plutôt que de sous-évaluer les frais. La moitié à la charge
+    /// du fournisseur est déduite de l'acompte (0 si insuffisant, le manque
+    /// retombe sur le solde restant via netAmountDue), puis l'acompte est
+    /// replafonné à netAmountDue. Si netAmountDue est nul, la transaction est
+    /// directement clôturée ci-dessous : depositFunds et withdrawFunds n'ont
+    /// sinon aucun moyen de l'amener à TransactionCompleted.
     function transfertFeesFromBuyer(bytes32 _transactionID) internal {
         Transaction storage _transaction = TransactionsList[_transactionID];
 
         uint128 _feesAmount = uint128(uint256(_transaction.totalAmount) * feesRateBps / 10000);
 
-        if (feesRateBps > 0 && _feesAmount < 30_000_000) _feesAmount = 30_000_000;
+        if (feesRateBps > 0 && _feesAmount < minFeesAmount) _feesAmount = minFeesAmount;
 
-        if (_feesAmount > _transaction.totalAmount) _feesAmount = _transaction.totalAmount;
+        uint128 _halfFees = _feesAmount / 2;
 
         _transaction.feesAmount = _feesAmount;
-        _transaction.netAmountDue = _transaction.totalAmount - (_feesAmount / 2);
+        _transaction.netAmountDue = _transaction.totalAmount > _halfFees ? _transaction.totalAmount - _halfFees : 0;
 
-        uint128 _sellerFeesShare = _feesAmount / 2;
+        uint128 _sellerFeesShare = _halfFees;
         if (_transaction.advanceAmount > _sellerFeesShare) {
             _transaction.advanceAmount -= _sellerFeesShare;
         } else {
@@ -469,6 +476,22 @@ abstract contract InternalFunctions is Ownable {
             _token.safeTransferFrom(_transaction.buyer.userAddress, feesWalletAddress, _feesAmount);
 
             emit FeesPaid(_transactionID, _transaction.buyer.userAddress, feesWalletAddress, _feesAmount, _transaction.currency);
+        }
+
+        // Cas limite : sur une transaction assez petite pour que le plancher
+        // de frais absorbe tout netAmountDue (totalAmount <= la moitié du
+        // plancher), il n'y a plus rien à déposer ni à retirer.
+        // depositFunds refuse tout montant nul et withdrawFunds exige
+        // pendingWithdrawalAmount > 0 : sans ce court-circuit, la
+        // transaction resterait bloquée en Signed pour toujours (le passage
+        // à TransactionCompleted n'a normalement lieu qu'en effet de bord
+        // d'un retrait réussi). On la clôture donc directement ici.
+        if (_transaction.netAmountDue == 0) {
+            _transaction.depositCompleted = true;
+            _transaction.withdrawalCompleted = true;
+            _transaction.workflowStatus = WorkflowStatus.TransactionCompleted;
+
+            emit TransactionCompleted(_transactionID, _transaction.buyer.userAddress, _transaction.seller.userAddress);
         }
     }
 

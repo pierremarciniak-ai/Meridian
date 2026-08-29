@@ -20,6 +20,7 @@ import { estimateAdvanceAmount, estimateFees, isCurrentEditor } from "@/lib/doma
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Meta } from "@/hooks/useErc20";
 import { useFeesRateBps } from "@/hooks/useFeesRateBps";
+import { useMinFeesAmount } from "@/hooks/useMinFeesAmount";
 import { useShortDeadlineMode } from "@/hooks/useShortDeadlineMode";
 import { useTokenAddresses } from "@/hooks/useTokenAddresses";
 import { meridianAbi } from "@/lib/web3/abi/meridian";
@@ -63,6 +64,7 @@ export function DetailsForm({
   const { decimals, symbol } = useErc20Meta(tokenAddresses[currency]);
   const { execute, stage, error, isSuccess } = useContractAction();
   const { feesRateBps } = useFeesRateBps();
+  const { minFeesAmount } = useMinFeesAmount();
 
   useEffect(() => {
     // decimals vient de useErc20Meta (lecture on-chain asynchrone, 6 par
@@ -103,7 +105,7 @@ export function DetailsForm({
    * qui fait foi n'étant calculé qu'à la double signature (voir
    * TransactionSummary).
    */
-  const { feesAmount: feesEstimate } = estimateFees(totalAmountParsed, feesRateBps);
+  const { feesAmount: feesEstimate } = estimateFees(totalAmountParsed, feesRateBps, minFeesAmount);
   const myTurn = isCurrentEditor(tx, role);
   const containerReferenceValid = CONTAINER_REFERENCE_PATTERN.test(containerReference);
 

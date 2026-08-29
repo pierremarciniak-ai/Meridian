@@ -19,6 +19,7 @@ export function useAdminState() {
       { address: meridianAddress, abi: meridianAbi, functionName: "mockSanctionsEnabled" },
       { address: meridianAddress, abi: meridianAbi, functionName: "feesWalletAddress" },
       { address: meridianAddress, abi: meridianAbi, functionName: "feesRateBps" },
+      { address: meridianAddress, abi: meridianAbi, functionName: "minFeesAmount" },
       { address: meridianAddress, abi: meridianAbi, functionName: "tokenAddresses", args: [Currency.USDC] },
       { address: meridianAddress, abi: meridianAbi, functionName: "tokenAddresses", args: [Currency.USDT] },
       { address: meridianAddress, abi: meridianAbi, functionName: "tokenAddresses", args: [Currency.EURC] },
@@ -34,6 +35,7 @@ export function useAdminState() {
     mockSanctionsEnabled,
     feesWalletAddress,
     feesRateBps,
+    minFeesAmount,
     usdc,
     usdt,
     eurc,
@@ -50,6 +52,7 @@ export function useAdminState() {
     mockSanctionsEnabled: mockSanctionsEnabled?.result as boolean | undefined,
     feesWalletAddress: feesWalletAddress?.result as `0x${string}` | undefined,
     feesRateBps: feesRateBps?.result as number | undefined,
+    minFeesAmount: minFeesAmount?.result as bigint | undefined,
     tokenAddressesOnChain: {
       [Currency.USDC]: usdc?.result as `0x${string}` | undefined,
       [Currency.USDT]: usdt?.result as `0x${string}` | undefined,

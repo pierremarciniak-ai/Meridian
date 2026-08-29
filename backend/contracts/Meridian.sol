@@ -98,6 +98,14 @@ contract Meridian is InternalFunctions, ReentrancyGuard {
         emit FeesRateBpsUpdated(_feesRateBps);
     }
 
+    /// @notice Configure le montant minimum des frais de service
+    function setMinimumFeesAmount(uint128 _minFeesAmount) external onlyOwner {
+        
+        minFeesAmount = _minFeesAmount;
+
+        emit MinimumFeesAmountUpdated(_minFeesAmount);
+    }    
+
     /// @notice Ouvre un nouveau dossier : l'appelant devient l'acheteur.
     /// @dev Génère transactionID = keccak256(internalID, msg.sender).
     /// currentEditor démarre à Seller : c'est donc le fournisseur qui doit

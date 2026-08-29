@@ -64,12 +64,16 @@ describe("Meridian", function () {
 
     // feesWalletAddress est requis dès qu'une signature complète déclenche un
     // prélèvement de frais non nul (require dédié dans transfertFeesFromBuyer)
-    // : sans ce câblage, tout test dédié aux frais échouerait. feesRateBps
-    // reste à 0 par défaut (valeur initiale du contrat) : à ce taux, aucun
-    // prélèvement n'a lieu, donc tous les tests qui ne testent pas les frais
-    // ne sont pas affectés par ce câblage. Les tests dédiés ajustent
-    // feesRateBps eux-mêmes via setFeesRateBps.
+    // : sans ce câblage, tout test dédié aux frais échouerait.
     await meridian.setFeesWalletAddress(feesWallet.address);
+
+    // feesRateBps vaut 15 par défaut dans le constructeur (comportement de
+    // production, voir les scripts de déploiement) : on le ramène à 0 ici
+    // pour que les tests qui ne testent pas les frais restent isolés de ce
+    // mécanisme (pas d'approbation ERC20 à prévoir, montants comparés à
+    // totalAmount sans déduction). Les tests dédiés aux frais l'ajustent
+    // eux-mêmes via setFeesRateBps.
+    await meridian.setFeesRateBps(0);
 
     const mintAmount = ethers.parseUnits("10000", 6);
     await usdc.mint(buyer.address, mintAmount);
@@ -268,9 +272,10 @@ describe("Meridian", function () {
     if (options.tokenAddress) {
       await meridian.setTokenAddress(Currency.USDC, options.tokenAddress);
     }
-    if (options.feesRateBps) {
-      await meridian.setFeesRateBps(options.feesRateBps);
-    }
+    // feesRateBps vaut 15 par défaut dans le constructeur (voir deployFixture) :
+    // ramené à 0 sauf demande explicite, pour que la valeur par défaut reste
+    // "taux 0" comme documenté ci-dessus.
+    await meridian.setFeesRateBps(options.feesRateBps ?? 0);
     return meridian;
   }
 
@@ -1455,6 +1460,29 @@ describe("Meridian", function () {
       });
     });
 
+    describe("setMinimumFeesAmount", function () {
+      it("vaut 30 tokens par défaut (constructor)", async function () {
+        const { meridian } = await deployFixture();
+        expect(await meridian.minFeesAmount()).to.equal(30n * 10n ** 6n);
+      });
+
+      it("permet au owner de configurer le montant minimum des frais de service", async function () {
+        const { meridian } = await deployFixture();
+        const newMinFees = 50n * 10n ** 6n;
+        await expect(meridian.setMinimumFeesAmount(newMinFees))
+          .to.emit(meridian, "MinimumFeesAmountUpdated")
+          .withArgs(newMinFees);
+        expect(await meridian.minFeesAmount()).to.equal(newMinFees);
+      });
+
+      it("refuse un appel par un compte non-owner", async function () {
+        const { meridian, other } = await deployFixture();
+        await expect(meridian.connect(other).setMinimumFeesAmount(50n * 10n ** 6n))
+          .to.be.revertedWithCustomError(meridian, "OwnableUnauthorizedAccount")
+          .withArgs(other.address);
+      });
+    });
+
     describe("prélèvement à la signature complète", function () {
       // Setup commun aux 3 tests suivants : taux à 5%, dossier signé côté
       // vendeur, prêt pour la signature acheteur — celle qui, en complétant
@@ -1647,32 +1675,93 @@ describe("Meridian", function () {
         expect(stored.netAmountDue).to.equal(netAmountDue);
       });
 
-      it("plafonne le plancher à totalAmount plutôt que de faire revert sur une très petite transaction", async function () {
+      it("respecte un plancher personnalisé configuré via setMinimumFeesAmount, pas 30 en dur", async function () {
         const ctx = await deployFixture();
         const { meridian, usdc, buyer, feesWallet } = ctx;
         await meridian.setFeesRateBps(500); // 5%
 
-        // 5% de 10 = 0,5 token, très en dessous du plancher de 30 — qui
-        // dépasserait totalAmount si on ne le plafonnait pas, provoquant un
-        // underflow (donc un revert) sur netAmountDue = totalAmount - fees/2.
-        const totalAmount = 10n * 10n ** 6n;
+        const customMinFees = 50n * 10n ** 6n;
+        await meridian.setMinimumFeesAmount(customMinFees);
+
+        // 5% de 200 = 10 tokens, sous le nouveau plancher de 50.
+        const totalAmount = 200n * 10n ** 6n;
         const { transactionID } = await createSignedBySellerOnly(ctx, {
           transactionModel: TransactionModel.FullLocked,
           totalAmount,
         });
 
-        await usdc.connect(buyer).approve(await meridian.getAddress(), totalAmount);
+        await usdc.connect(buyer).approve(await meridian.getAddress(), customMinFees);
 
         const feesWalletBalanceBefore = await usdc.balanceOf(feesWallet.address);
 
-        // Ne doit pas revert : le plancher est plafonné à totalAmount.
-        await expect(meridian.connect(buyer).signTransactionBuyer(transactionID)).to.emit(meridian, "FeesPaid");
+        await expect(meridian.connect(buyer).signTransactionBuyer(transactionID))
+          .to.emit(meridian, "FeesPaid")
+          .withArgs(transactionID, buyer.address, feesWallet.address, customMinFees, Currency.USDC);
 
-        expect((await usdc.balanceOf(feesWallet.address)) - feesWalletBalanceBefore).to.equal(totalAmount);
+        expect((await usdc.balanceOf(feesWallet.address)) - feesWalletBalanceBefore).to.equal(customMinFees);
+        expect((await meridian.getTransaction(transactionID)).feesAmount).to.equal(customMinFees);
+      });
+
+      it("applique le plancher de 30 même s'il dépasse totalAmount, sans revert (netAmountDue clampé à 0)", async function () {
+        const ctx = await deployFixture();
+        const { meridian, usdc, buyer, feesWallet } = ctx;
+        await meridian.setFeesRateBps(500); // 5%
+
+        // 5% de 10 = 0,5 token, très en dessous du plancher de 30, qui
+        // l'emporte désormais sans être plafonné : feesAmount/2 (15) dépasse
+        // totalAmount (10), d'où le clamp de netAmountDue à 0 plutôt qu'un
+        // underflow sur totalAmount - fees/2.
+        const totalAmount = 10n * 10n ** 6n;
+        const flooredFeesAmount = 30n * 10n ** 6n;
+        const { transactionID } = await createSignedBySellerOnly(ctx, {
+          transactionModel: TransactionModel.FullLocked,
+          totalAmount,
+        });
+
+        await usdc.connect(buyer).approve(await meridian.getAddress(), flooredFeesAmount);
+
+        const feesWalletBalanceBefore = await usdc.balanceOf(feesWallet.address);
+
+        // Ne doit pas revert : netAmountDue est clampé à 0, pas feesAmount.
+        await expect(meridian.connect(buyer).signTransactionBuyer(transactionID))
+          .to.emit(meridian, "FeesPaid")
+          .withArgs(transactionID, buyer.address, feesWallet.address, flooredFeesAmount, Currency.USDC);
+
+        expect((await usdc.balanceOf(feesWallet.address)) - feesWalletBalanceBefore).to.equal(flooredFeesAmount);
 
         const stored = await meridian.getTransaction(transactionID);
-        expect(stored.feesAmount).to.equal(totalAmount);
-        expect(stored.netAmountDue).to.equal(totalAmount - totalAmount / 2n);
+        expect(stored.feesAmount).to.equal(flooredFeesAmount);
+        expect(stored.netAmountDue).to.equal(0n);
+      });
+
+      it("clôture directement la transaction quand netAmountDue tombe à 0 (rien à déposer ni à retirer)", async function () {
+        const ctx = await deployFixture();
+        const { meridian, usdc, buyer, feesWallet } = ctx;
+        await meridian.setFeesRateBps(500); // 5%
+
+        // totalAmount <= la moitié du plancher (15) : netAmountDue = 0. Sans
+        // court-circuit, la transaction resterait bloquée en Signed pour
+        // toujours (depositFunds refuse un montant nul, withdrawFunds exige
+        // pendingWithdrawalAmount > 0).
+        const totalAmount = 10n * 10n ** 6n;
+        const flooredFeesAmount = 30n * 10n ** 6n;
+        const { transactionID } = await createSignedBySellerOnly(ctx, {
+          transactionModel: TransactionModel.FullLocked,
+          totalAmount,
+        });
+
+        await usdc.connect(buyer).approve(await meridian.getAddress(), flooredFeesAmount);
+
+        await expect(meridian.connect(buyer).signTransactionBuyer(transactionID)).to.emit(meridian, "TransactionCompleted");
+
+        const stored = await meridian.getTransaction(transactionID);
+        expect(stored.workflowStatus).to.equal(WorkflowStatus.Completed);
+        expect(stored.depositCompleted).to.equal(true);
+        expect(stored.withdrawalCompleted).to.equal(true);
+        expect(stored.pendingWithdrawalAmount).to.equal(0n);
+
+        // depositFunds redevient inaccessible : la transaction n'est plus "Signed".
+        await expect(meridian.connect(buyer).depositFunds(transactionID)).to.be.revertedWith("Transaction is not signed");
       });
 
       it("n'a aucun effet quand feesRateBps vaut 0 (comportement par défaut, rétrocompatible)", async function () {

@@ -318,6 +318,19 @@ export const meridianAbi = [
     "anonymous": false,
     "inputs": [
       {
+        "indexed": false,
+        "internalType": "uint128",
+        "name": "minFeesAmount",
+        "type": "uint128"
+      }
+    ],
+    "name": "MinimumFeesAmountUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": true,
         "internalType": "address",
         "name": "newMockOracle",
@@ -1050,6 +1063,19 @@ export const meridianAbi = [
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "minFeesAmount",
+    "outputs": [
+      {
+        "internalType": "uint128",
+        "name": "",
+        "type": "uint128"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       {
         "internalType": "bytes32",
@@ -1356,6 +1382,19 @@ export const meridianAbi = [
       }
     ],
     "name": "setMeridianNFTAddress",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint128",
+        "name": "_minFeesAmount",
+        "type": "uint128"
+      }
+    ],
+    "name": "setMinimumFeesAmount",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"

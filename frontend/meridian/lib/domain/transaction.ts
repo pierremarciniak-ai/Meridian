@@ -130,25 +130,27 @@ export function estimateDepositAmount(tx: OnChainTransaction): bigint {
 }
 
 /**
- * Plancher de frais appliqué par `transfertFeesFromBuyer` — 30 tokens dans
- * la plus petite unité (6 décimales pour USDC/USDT/EURC).
- */
-const MIN_FEES_AMOUNT = 30_000_000n;
-
-/**
  * Miroir client du calcul de `transfertFeesFromBuyer` (pas le transfert
  * lui-même) — estime en temps réel, avant la double signature, le montant
  * des frais et le montant net qui en résultera. Purement indicatif : une
  * fois Signed, préférer `tx.feesAmount`/`tx.netAmountDue` (figés, fiables
- * même si `feesRateBps` change depuis). Reproduit le plancher (30 tokens dès
- * que le taux est non nul) et son plafonnement à `totalAmount` (évite un
- * `netAmountDue` négatif sur une très petite transaction).
+ * même si `feesRateBps`/`minFeesAmount` changent depuis). `minFeesAmount`
+ * vient de `useMinFeesAmount` (configurable via `setMinimumFeesAmount`, plus
+ * une constante fixe) : le plancher s'applique dès que le taux est non nul,
+ * sans exception même au-delà de `totalAmount` sur une très petite
+ * transaction ; `netAmountDue` est alors clampé à 0 plutôt que de réduire
+ * les frais (même logique que côté contrat).
  */
-export function estimateFees(totalAmount: bigint, feesRateBps: number): { feesAmount: bigint; netAmountDue: bigint } {
+export function estimateFees(
+  totalAmount: bigint,
+  feesRateBps: number,
+  minFeesAmount: bigint
+): { feesAmount: bigint; netAmountDue: bigint } {
   let feesAmount = (totalAmount * BigInt(feesRateBps)) / 10000n;
-  if (feesRateBps > 0 && feesAmount < MIN_FEES_AMOUNT) feesAmount = MIN_FEES_AMOUNT;
-  if (feesAmount > totalAmount) feesAmount = totalAmount;
-  return { feesAmount, netAmountDue: totalAmount - feesAmount / 2n };
+  if (feesRateBps > 0 && feesAmount < minFeesAmount) feesAmount = minFeesAmount;
+  const halfFees = feesAmount / 2n;
+  const netAmountDue = totalAmount > halfFees ? totalAmount - halfFees : 0n;
+  return { feesAmount, netAmountDue };
 }
 
 /**

@@ -97,8 +97,8 @@ Vérifiées on-chain à jour :
 
 | Contrat / rôle | Adresse |
 |---|---|
-| Meridian | `0xcE2ef4A313A909E486209D5502dc730e232fA6F9` |
-| MeridianNFT | `0xBb7CA60dDcf776B8a15911b4da029334D5f3125c` |
+| Meridian | `0x1a36044Bba55b5acEFA4CB8164A2100d3A8615FB` |
+| MeridianNFT | `0x65EDB3b5bC818C15c98A582E7667972A74040B2F` |
 | SanctionsList (oracle) | `0x7CF947EFD5377C05e4Feb3cfb8AAdB6343F7625a` |
 | Mock USDC | `0xe9542BA4DDE93faF6598BDB564a580b0671014a4` |
 | Mock USDT | `0x7CDe28048BDa4f5B4678683ad2dCBF6e35a98464` |
