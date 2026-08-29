@@ -74,12 +74,12 @@ async function main() {
   // --- 5. Câblage sur l'oracle de position et le wallet de frais existants ---
   await (await meridian.setContainerPositionOracleAddress(containerPositionOracleAddress)).wait();
   await (await meridian.setFeesWalletAddress(feesWalletAddress)).wait();
-  // setFeesRateBps volontairement pas appelé ici : reste à 0 (pas de frais)
-  // par défaut, à ajuster ensuite depuis le panneau admin si besoin — l'ancien
-  // feesAmount (montant fixe) n'a plus le même sens avec le nouveau mécanisme
-  // en taux (feesRateBps), donc pas de valeur à reporter automatiquement.
 
-  // --- 6. Transfert de propriété vers l'admin final, si différent du déployeur ---
+  // --- 6. Réglage du taux des frais de service ---
+  await (await meridian.setFeesRateBps(15)).wait(); // ex: 250 = 2,50 %, sur 10000
+  console.log("FeesRateBps set: ", await meridian.feesRateBps());
+
+  // --- 7. Transfert de propriété vers l'admin final, si différent du déployeur ---
   if (adminAddress && adminAddress.toLowerCase() !== deployer.address.toLowerCase()) {
     await (await meridian.setNewOwner(adminAddress)).wait();
     console.log(`\nPropriété transférée de ${deployer.address} vers ${adminAddress}.`);
