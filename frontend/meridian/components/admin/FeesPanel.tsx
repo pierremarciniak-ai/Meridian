@@ -34,7 +34,7 @@ export function FeesPanel({
       <div className="divide-y" style={{ borderColor: "var(--color-navy-700)" }}>
         <AddressSetterRow
           label="Wallet de frais"
-          hint="Destinataire des frais prélevés dès la double signature de chaque contrat (voir checkSignatures)."
+          hint="Destinataire des frais prélevés à la double signature de chaque contrat."
           currentValue={feesWalletAddress}
           functionName="setFeesWalletAddress"
           onUpdated={onUpdated}
