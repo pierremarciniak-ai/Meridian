@@ -46,7 +46,7 @@ export function ContainerPositionOraclePanel({
       </CardHeader>
       <p className="mb-4 text-sm text-muted">
         Vous êtes connecté avec le wallet configuré comme oracle de position de conteneur. En production, cette valeur
-        est poussée par le cron qui interroge VesselFinder — ici vous pouvez la reporter manuellement pour vos tests.
+        est donnée par la route qui interroge VesselFinder — ici vous pouvez la reporter manuellement pour vos tests.
       </p>
       <div className="flex items-end gap-3">
         <Field label="Nouvelle position">
