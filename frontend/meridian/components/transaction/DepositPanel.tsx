@@ -8,7 +8,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { AdvancePaymentMode, currencyLabels, TransactionCondition } from "@/lib/domain/enums";
 import { formatAmount } from "@/lib/domain/format";
 import type { OnChainTransaction } from "@/lib/domain/transaction";
-import { estimateDepositAmount, isContainerPositionSufficientForWithdrawal } from "@/lib/domain/transaction";
+import { estimateDepositAmount, isBalanceDeposit, isContainerPositionSufficientForWithdrawal } from "@/lib/domain/transaction";
 import { useContainerPositionAttestation } from "@/hooks/useContainerPositionAttestation";
 import { useContractAction } from "@/hooks/useContractAction";
 import { useErc20Allowance, useErc20Balance, useErc20Meta } from "@/hooks/useErc20";
@@ -21,7 +21,8 @@ import { useMeridianAddress } from "@/lib/web3/contracts";
  * Dépôt du prochain versement dû par l'acheteur (acompte ou solde restant),
  * avec approbation ERC-20 préalable si nécessaire. Le dépôt du solde
  * restant est en plus bloqué côté front tant que la condition de retrait du
- * fournisseur n'est pas remplie (voir `isBalanceDeposit` ci-dessous).
+ * fournisseur n'est pas remplie (voir `isBalanceDeposit`, `pendingActionReason`
+ * en tient compte de la même façon pour la pastille "Action requise").
  */
 export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId: `0x${string}`; tx: OnChainTransaction; onDeposited: () => void }) {
   const { address } = useAccount();
@@ -51,13 +52,13 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
   // encaisser ce solde avant que la condition qui débloquera le retrait côté
   // fournisseur (voir WithdrawPanel) soit déjà remplie — restriction propre
   // au front, le contrat n'impose rien de tel dans depositFunds.
-  const isBalanceDeposit = tx.depositedAmount > 0n && tx.depositedAmount < tx.netAmountDue;
+  const balanceDeposit = isBalanceDeposit(tx);
   const { data: attestation, isLoading: isCheckingPosition } = useContainerPositionAttestation(
-    isBalanceDeposit ? transactionId : undefined
+    balanceDeposit ? transactionId : undefined
   );
   const livePosition = attestation?.available ? attestation.status : undefined;
   const withdrawalConditionMet = isContainerPositionSufficientForWithdrawal(tx, livePosition);
-  const balanceDepositBlocked = isBalanceDeposit && !withdrawalConditionMet;
+  const balanceDepositBlocked = balanceDeposit && !withdrawalConditionMet;
 
   useEffect(() => {
     if (approveAction.isSuccess) allowanceQuery.refetch();
@@ -95,7 +96,7 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
         {/* La part de frais du fournisseur est désormais déduite de l'acompte
             (1er dépôt) — voir transfertFeesFromBuyer — pas du solde restant :
             ce message n'a donc plus sa place lors de ce second versement. */}
-        {tx.feesPaid && !isBalanceDeposit && (
+        {tx.feesPaid && !balanceDeposit && (
           <span className="text-subtle">Frais de service fournisseur déduits du montant</span>
         )}
         <span className="text-subtle">
@@ -107,7 +108,7 @@ export function DepositPanel({ transactionId, tx, onDeposited }: { transactionId
         <p className="mb-3 text-sm text-danger">Solde {symbol} insuffisant. Utilisez le robinet de jetons de test depuis le tableau de bord.</p>
       )}
 
-      {isBalanceDeposit && isCheckingPosition ? (
+      {balanceDeposit && isCheckingPosition ? (
         <p className="text-sm text-subtle">Vérification de la position du conteneur…</p>
       ) : balanceDepositBlocked ? (
         <p className="text-sm text-subtle">

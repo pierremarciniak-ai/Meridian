@@ -232,8 +232,13 @@ export function pendingActionReason(tx: OnChainTransaction, role: "buyer" | "sel
   if (role === "buyer") {
     const rollbackAvailable = canRollbackDeposit(tx) && isRollbackEligible(tx);
     if (rollbackAvailable) return "rollback";
-    if (tx.workflowStatus === WorkflowStatus.Signed && !tx.depositCompleted) return "deposit";
-    return null;
+    if (tx.workflowStatus !== WorkflowStatus.Signed || tx.depositCompleted) return null;
+    // Le solde restant est bloqué côté front tant que la condition de
+    // retrait n'est pas remplie (voir isBalanceDeposit/DepositPanel) : pas
+    // la peine de signaler une action que l'acheteur ne peut pas encore
+    // réellement effectuer.
+    if (isBalanceDeposit(tx) && !isContainerPositionSufficientForWithdrawal(tx)) return null;
+    return "deposit";
   }
 
   if (role === "seller") {
@@ -241,6 +246,18 @@ export function pendingActionReason(tx: OnChainTransaction, role: "buyer" | "sel
   }
 
   return null;
+}
+
+/**
+ * Distingue le solde restant (second versement) de l'acompte : un acompte
+ * a déjà été déposé, mais pas encore la totalité de `netAmountDue`. Ce
+ * second versement est volontairement bloqué côté front tant que la
+ * condition de retrait du fournisseur n'est pas remplie (voir
+ * `DepositPanel`), même si le contrat n'impose rien de tel dans
+ * `depositFunds`.
+ */
+export function isBalanceDeposit(tx: Pick<OnChainTransaction, "depositedAmount" | "netAmountDue">): boolean {
+  return tx.depositedAmount > 0n && tx.depositedAmount < tx.netAmountDue;
 }
 
 /**
