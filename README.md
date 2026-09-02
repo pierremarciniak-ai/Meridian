@@ -105,9 +105,6 @@ Vérifiées on-chain à jour :
 | Mock USDC | `0xe9542BA4DDE93faF6598BDB564a580b0671014a4` |
 | Mock USDT | `0x7CDe28048BDa4f5B4678683ad2dCBF6e35a98464` |
 | Mock EURC | `0xC9454cd04426271c75F5c4e418E5d9aAF07309B5` |
-| Oracle position de conteneur | `0x636B37b7F5DE69E8a4C5E7eBf4E1F0298b49AD91` |
-| Wallet de frais | `0xcdcF816d8F8b3890Bc58ddf345A62d270a7B1188` |
-| Owner actuel | `0xbdC42fAe1428584a28A038Af9922D769f799fa57` |
 
 ## Contrats principaux
 
